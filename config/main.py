@@ -900,6 +900,51 @@ def shutdown(ctx, interface_name):
         config_db.mod_entry("PORTCHANNEL", interface_name, {"admin_status": "down"})
 
 #
+# 'tx_error_threshold' subgroup
+#
+
+@interface.group()
+@click.pass_context
+def tx_error_threshold(ctx):
+    """Set or del threshold of tx error statistics"""
+    pass
+
+#
+# 'set' subcommand
+#
+@tx_error_threshold.command()
+@click.pass_context
+@click.argument('interface_name', metavar='<interface_name>', required=True)
+@click.argument('interface_tx_err_threshold', metavar='<interface_tx_err_threshold>', required=True)
+def set(ctx, interface_name, interface_tx_err_threshold):
+    """Set threshold of tx error statistics"""
+    if interface_name is None:
+        ctx.fail("'interface_name' is None!")
+
+    config_db = ctx.obj["config_db"]
+    if interface_name.startswith("Ethernet"):
+        config_db.set_entry("TX_ERR_CFG", (interface_name), {"tx_error_threshold": interface_tx_err_threshold})
+    else:
+        ctx.fail("Only Ethernet interfaces are supported")
+
+#
+# 'clear' subcommand
+#
+@tx_error_threshold.command()
+@click.pass_context
+@click.argument('interface_name', metavar='<interface_name>', required=True)
+def clear(ctx, interface_name):
+    """Clear threshold of tx error statistics"""
+    if interface_name is None:
+        ctx.fail("'interface_name' is None!")
+
+    config_db = ctx.obj["config_db"]
+    if interface_name.startswith("Ethernet"):
+        config_db.set_entry("TX_ERR_CFG", (interface_name), None)
+    else:
+        ctx.fail("Only Ethernet interfaces are supported")
+
+#
 # 'speed' subcommand
 #
 
@@ -1126,6 +1171,18 @@ def naming_mode_default():
 def naming_mode_alias():
     """Set CLI interface naming mode to ALIAS (Vendor port alias)"""
     set_interface_naming_mode('alias')
+
+
+#
+# 'tx_error_stat_poll_period' subcommand ('config tx_error_stat_poll_period')
+#
+@config.command()
+@click.argument('period', metavar='<period>', required=True)
+def tx_error_stat_poll_period(period):
+    """Set polling period of tx error statistics, 0 for disable, xxx for default"""
+    config_db = ConfigDBConnector()
+    config_db.connect()
+    config_db.set_entry("TX_ERR_CFG", ("GLOBAL_PERIOD"), {"tx_error_check_period": period})
 
 
 if __name__ == '__main__':
