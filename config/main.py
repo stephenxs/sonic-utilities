@@ -915,13 +915,21 @@ def tx_error_threshold(ctx):
 @tx_error_threshold.command()
 @click.pass_context
 @click.argument('interface_name', metavar='<interface_name>', required=True)
-@click.argument('interface_tx_err_threshold', metavar='<interface_tx_err_threshold>', required=True)
+@click.argument('interface_tx_err_threshold', metavar='<interface_tx_err_threshold>', required=True, type=int)
 def set(ctx, interface_name, interface_tx_err_threshold):
     """Set threshold of tx error statistics"""
     if interface_name is None:
         ctx.fail("'interface_name' is None!")
 
-    config_db = ctx.obj["config_db"]
+    config_db = ctx.obj['config_db']
+    if get_interface_naming_mode() == "alias":
+        interface_name = interface_alias_to_name(interface_name)
+        if interface_name is None:
+            ctx.fail("'interface_name' is None!")
+
+    if interface_name_is_valid(interface_name) is False:
+        ctx.fail("Interface name is invalid. Please enter a valid interface name!!")
+
     if interface_name.startswith("Ethernet"):
         config_db.set_entry("TX_ERR_CFG", (interface_name), {"tx_error_threshold": interface_tx_err_threshold})
     else:
@@ -939,10 +947,22 @@ def clear(ctx, interface_name):
         ctx.fail("'interface_name' is None!")
 
     config_db = ctx.obj["config_db"]
-    if interface_name.startswith("Ethernet"):
-        config_db.set_entry("TX_ERR_CFG", (interface_name), None)
+    if get_interface_naming_mode() == "alias":
+        interface_name = interface_alias_to_name(interface_name)
+        if interface_name is None:
+            ctx.fail("'interface_name' is None!")
+
+    if interface_name_is_valid(interface_name) is False:
+        ctx.fail("Interface name is invalid. Please enter a valid interface name!!")
+
+    if config_db.get_entry('TX_ERR_CFG', interface_name):
+        if interface_name.startswith("Ethernet"):
+            config_db.set_entry("TX_ERR_CFG", (interface_name), None)
+        else:
+            ctx.fail("Only Ethernet interfaces are supported")
     else:
-        ctx.fail("Only Ethernet interfaces are supported")
+        ctx.fail("Tx Error threshold hasn't been configured on the interface")
+
 
 #
 # 'speed' subcommand
@@ -997,9 +1017,6 @@ def add(ctx, interface_name, ip_addr):
         config_db.set_entry("PORTCHANNEL_INTERFACE", (interface_name, ip_addr), {"NULL": "NULL"})
     elif interface_name.startswith("Vlan"):
         config_db.set_entry("VLAN_INTERFACE", (interface_name, ip_addr), {"NULL": "NULL"})
-    elif interface_name.startswith("Loopback"):
-        config_db.set_entry("LOOPBACK_INTERFACE", (interface_name, ip_addr), {"NULL": "NULL"})
-
 
 #
 # 'del' subcommand
@@ -1023,8 +1040,6 @@ def remove(ctx, interface_name, ip_addr):
         config_db.set_entry("PORTCHANNEL_INTERFACE", (interface_name, ip_addr), None)
     elif interface_name.startswith("Vlan"):
         config_db.set_entry("VLAN_INTERFACE", (interface_name, ip_addr), None)
-    elif interface_name.startswith("Loopback"):
-        config_db.set_entry("LOOPBACK_INTERFACE", (interface_name, ip_addr), None)
 
 #
 # 'acl' group ('config acl ...')
@@ -1172,12 +1187,11 @@ def naming_mode_alias():
     """Set CLI interface naming mode to ALIAS (Vendor port alias)"""
     set_interface_naming_mode('alias')
 
-
 #
 # 'tx_error_stat_poll_period' subcommand ('config tx_error_stat_poll_period')
 #
 @config.command()
-@click.argument('period', metavar='<period>', required=True)
+@click.argument('period', metavar='<period>', required=True, type=int)
 def tx_error_stat_poll_period(period):
     """Set polling period of tx error statistics, 0 for disable, xxx for default"""
     config_db = ConfigDBConnector()
