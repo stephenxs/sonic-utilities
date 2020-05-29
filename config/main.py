@@ -2122,6 +2122,202 @@ def remove(ctx, interface_name, ip_addr):
     except ValueError:
         ctx.fail("'ip_addr' is not valid.")
 
+
+def pgmaps_check_legality(ctx, interface_name, new_pg, profile = None):
+    """
+    Tool function to check whether new_pg is legal.
+    Three checking performed:
+    1. Whether the new_pg is legal: pgs are in range [0-7]
+    2. Whether the new_pg overlaps an existing pg in the port
+    3. Whether there is any other PG on the interface refering other lossless profiles
+    """
+    config_db = ctx.obj["config_db"]
+
+    try:
+        lower = int(new_pg[0])
+        upper = int(new_pg[-1])
+
+        if upper < lower or lower < 0 or upper > 7:
+            ctx.fail("PG {} is not valid.".format(new_pg))
+    except:
+        ctx.fail("PG {} is not valid.".format(new_pg))
+
+    # Check overlapping.
+    # To configure a new PG which is overlapping an existing one is not allowed
+    # For example, to add '5-6' while '3-5' existing is illegal
+    existing_pgs = config_db.get_table("BUFFER_PG")
+    for k, v in existing_pgs.iteritems():
+        port, existing_pg = k
+        if port == interface_name:
+            existing_lower = int(existing_pg[0])
+            existing_upper = int(existing_pg[-1])
+            if existing_upper < lower or existing_lower > upper:
+                # new and existing pgs disjoint, legal
+                pass
+            else:
+                ctx.fail("PG {} overlaps with existing PG {}".format(new_pg, existing_pg))
+
+            if 'profile' in v.keys():
+                existing_profile_name = v['profile'][1:-1]
+                pure_profile_name = existing_profile_name.split('|')[1]
+                if existing_profile_name != profile:
+                    existing_profile_entry = config_db.get_entry("BUFFER_PROFILE", pure_profile_name)
+                    if not 'xoff' in existing_profile_entry.keys():
+                        # We don't care about non lossless profile
+                        continue
+                    else:
+                        ctx.fail("Existing lossless PG {} references a different profile {}".format(existing_pg, existing_profile_name))
+            elif profile:
+                ctx.fail("Existing lossless PG {} is dynamically calculated and should be removed first")
+
+def remove_pg_on_port(ctx, interface_name, pg_map, profile = None):
+    config_db = ctx.obj["config_db"]
+
+    # Check whether port is legal
+    ports = config_db.get_entry("PORT", interface_name)
+    if not ports:
+        ctx.fail("Port {} doesn't exist".format(interface_name))
+
+    # Remvoe all dynamic lossless PGs on the port
+    existing_pgs = config_db.get_table("BUFFER_PG")
+    for k, v in existing_pgs.iteritems():
+        port, existing_pg = k
+        if port == interface_name and (not pg_map or pg_map == existing_pg):
+            need_to_remove = False
+            referenced_profile = v.get('profile')
+            if referenced_profile and referenced_profile[1:-1] == profile:
+                # Remove headroom override
+                need_to_remove = True
+            elif not profile and not v:
+                # Remove dynamic lossless PG
+                need_to_remove = True
+            if need_to_remove:
+                config_db.set_entry("BUFFER_PG", (interface_name, existing_pg), None)
+
+
+#
+# 'headroom_override' subgroup ('config interface headroom_override ...')
+#
+
+@interface.group(cls=AbbreviationGroup)
+@click.pass_context
+def headroom_override(ctx):
+    """Set or Clear headroom override"""
+    pass
+
+#
+# 'add' command ('config interface headroom_override add ...')
+#
+@headroom_override.command()
+@click.argument('interface_name', metavar='<interface_name>', required=True)
+@click.argument('profile', metavar='<profile>', required=True)
+@click.argument('pg_map', metavar='<pg_map>', required=True)
+@click.pass_context
+def add(ctx, interface_name, profile, pg_map):
+    """Set headroom_override for the interface"""
+    config_db = ctx.obj["config_db"]
+
+    if not pg_map:
+        pg_map = '3-4'
+
+    if not config_db.get_entry("BUFFER_PROFILE", profile):
+        ctx.fail("Profile {} doesn't exist".format(profile))
+
+    profile_full_name = "BUFFER_PROFILE|{}".format(profile)
+
+    # Check whether pg_map is legal
+    # Check whether there is other lossless profiles configured on the interface
+    pgmaps_check_legality(ctx, interface_name, pg_map, profile_full_name)
+
+    # All checking passed
+    config_db.set_entry("BUFFER_PG", (interface_name, pg_map), {"profile": "[{}]".format(profile_full_name)})
+
+#
+# 'remove' command ('config interface headroom_override remove ...')
+#
+@headroom_override.command()
+@click.argument('interface_name', metavar='<interface_name>', required=True)
+@click.argument('profile', metavar='<profile>', required=True)
+@click.argument('pg_map', metavar='<pg_map>', required=False)
+@click.pass_context
+def remove(ctx, interface_name, profile, pg_map):
+    """Set headroom_override for the interface"""
+    remove_pg_on_port(ctx, interface_name, pg_map, "BUFFER_PROFILE|{}".format(profile))
+
+#
+# 'lossless_pg' subgroup ('config interface lossless_pg ...')
+#
+
+@interface.group(cls=AbbreviationGroup)
+@click.pass_context
+def lossless_pg(ctx):
+    """Set or clear lossless PGs"""
+    pass
+
+#
+# 'add' subcommand
+#
+
+@lossless_pg.command()
+@click.argument('interface_name', metavar='<interface_name>', required=True)
+@click.argument('pg_map', metavar='<pg_map>', required=True)
+@click.pass_context
+def add(ctx, interface_name, pg_map):
+    """Set lossless PGs for the interface"""
+    config_db = ctx.obj["config_db"]
+
+    # Check whether port is legal
+    ports = config_db.get_entry("PORT", interface_name)
+    if not ports:
+        ctx.fail("Port {} doesn't exist".format(interface_name))
+
+    # Check whether pg_map is legal
+    # Check whether there is other lossless profiles configured on the interface
+    pgmaps_check_legality(ctx, interface_name, pg_map)
+
+    # All checking passed
+    config_db.set_entry("BUFFER_PG", (interface_name, pg_map), {"NULL": "NULL"})
+
+#
+# 'remove' subcommand
+#
+@lossless_pg.command()
+@click.argument('interface_name', metavar='<interface_name>', required=True)
+@click.argument('pg_map', metavar='<pg_map', required=False)
+@click.pass_context
+def remove(ctx, interface_name, pg_map):
+    """Clear lossless PGs for the interface"""
+    remove_pg_on_port(ctx, interface_name, pg_map)
+
+#
+# 'cable_length' subcommand
+#
+
+@interface.command()
+@click.argument('interface_name', metavar='<interface_name>', required=True)
+@click.argument('length', metavar='<length>', required=True)
+@click.pass_context
+def cable_length(ctx, interface_name, length):
+    """Set lossless PGs for the interface"""
+    config_db = ctx.obj["config_db"]
+
+    # Check whether port is legal
+    ports = config_db.get_entry("PORT", interface_name)
+    if not ports:
+        ctx.fail("Port {} doesn't exist".format(interface_name))
+
+    try:
+        assert "m" == length[-1]
+        cable_len_num = int(length[:-1])
+    except:
+        ctx.fail("Invalid cable length. Should be in format <num>m, like 300m".format(cable_length))
+
+    keys = config_db.get_keys("CABLE_LENGTH")
+
+    cable_length_set = {}
+    cable_length_set[interface_name] = length
+    config_db.mod_entry("CABLE_LENGTH", keys[0], cable_length_set)
+
 #
 # 'transceiver' subgroup ('config interface transceiver ...')
 #
@@ -2682,7 +2878,90 @@ def priority(ctx, interface_name, priority, status):
             ctx.fail("'interface_name' is None!")
     
     run_command("pfc config priority {0} {1} {2}".format(status, interface_name, priority))
-    
+
+#
+# 'buffer_profile' group ('config buffer_profile 
+#
+
+@config.group(cls=AbbreviationGroup)
+@click.pass_context
+def buffer_profile(ctx):
+    """Configure buffer_profile"""
+
+@buffer_profile.command('add')
+@click.option('-profile', metavar='<profile>', type=str, help="Profile name")
+@click.option('-xon', metavar='<xon>', type=int, help="Set xon threshold")
+@click.option('-xoff', metavar='<xoff>', type=int, help="Set xoff threshold")
+@click.option('-headroom', metavar='<headroom>', type=int, help="Set reserved headroom size")
+@click.option('-dynamic_th', metavar='<dynamic_th>', type=str, help="Set dynamic threshold")
+@click.option('-pool', metavar='<pool>', type=str, help="Buffer pool")
+@click.pass_context
+def add(ctx, profile, xon, xoff, headroom, dynamic_th, pool):
+    """Add or modify a buffer profile"""
+    config_db = ConfigDBConnector()
+    config_db.connect()
+    params = {}
+    dynamic_calculate = True
+
+    if not pool:
+        pool = 'ingress_lossless_pool'
+    params['pool'] = '[BUFFER_POOL|' + pool + ']'
+    if not config_db.get_entry('BUFFER_POOL', pool):
+        ctx.fail("Pool {} doesn't exist".format(pool))
+
+    if xon:
+        params['xon'] = xon
+        dynamic_calculate = False
+
+    if xoff:
+        params['xoff'] = xoff
+        dynamic_calculate = False
+
+    if headroom:
+        params['size'] = headroom
+        dynamic_calculate = False
+    elif not dynamic_calculate:
+        headroom = xon + xoff
+        params['size'] = headroom
+
+    if dynamic_th:
+        params['dynamic_th'] = dynamic_th
+    else:
+        # Fetch all the keys of default_lossless_buffer_parameter table
+        # and then get the default_dynamic_th from that entry (should be only one)
+        keys = config_db.get_keys('DEFAULT_LOSSLESS_BUFFER_PARAMETER')
+        if len(keys) > 1 or len(keys) == 0:
+            ctx.fail("Multiple or no entry in DEFAULT_LOSSLESS_BUFFER_PARAMETER found while no dynamic_th specified")
+
+        default_lossless_param = config_db.get_entry('DEFAULT_LOSSLESS_BUFFER_PARAMETER', keys[0])
+        if 'default_dynamic_th' in default_lossless_param.keys():
+            params['dynamic_th'] = default_lossless_param['default_dynamic_th']
+        else:
+            ctx.fail("No dynamic_th defined in DEFAULT_LOSSLESS_BUFFER_PARAMETER")
+
+    if dynamic_calculate:
+        params['headroom_type'] = 'dynamic'
+
+    keys = config_db.get_keys("BUFFER_PROFILE")
+    if len(keys) > 0:
+        config_needs_updated = {"BUFFER_PROFILE" : { profile : params } }
+    else:
+        config_db.mod_entry("BUFFER_PROFILE", config_needs_updated)
+    config_db.set_entry("BUFFER_PROFILE", (profile), params)
+
+@buffer_profile.command('remove')
+@click.argument('profile', metavar='<profile>', required=True)
+@click.pass_context
+def remove(ctx, profile):
+    """Delete a buffer profile"""
+    config_db = ConfigDBConnector()
+    config_db.connect()
+    entry = config_db.get_entry("BUFFER_PROFILE", profile)
+    if entry:
+        config_db.set_entry("BUFFER_PROFILE", profile, None)
+    else:
+        ctx.fail("Profile {} doesn't exist".format(profile))
+
 #
 # 'platform' group ('config platform ...')
 #
