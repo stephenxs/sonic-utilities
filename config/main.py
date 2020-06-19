@@ -2193,7 +2193,37 @@ def remove_pg_on_port(ctx, interface_name, pg_map, profile = None):
                 need_to_remove = True
             if need_to_remove:
                 config_db.set_entry("BUFFER_PG", (interface_name, existing_pg), None)
+                adjust_pfc_enable(ctx, interface_name, pg_map, False)
 
+def adjust_pfc_enable(ctx, interface_name, pg_map, add):
+    config_db = ctx.obj["config_db"]
+
+    # Fetch the original pfc_enable
+    qosmap = config_db.get_entry("PORT_QOS_MAP", interface_name)
+    pfc_enable = qosmap["pfc_enable"]
+
+    pfc_set = set()
+    if pfc_enable:
+        for priority in pfc_enable.split(","):
+            pfc_set.add(int(priority))
+
+    lower_bound = int(pg_map[0])
+    upper_bound = int(pg_map[-1])
+
+    for priority in range(lower_bound, upper_bound + 1):
+        if add:
+            pfc_set.add(priority)
+        elif priority in pfc_set:
+            pfc_set.remove(priority)
+
+    empty_set = set()
+    pfc_enable = ""
+    if not pfc_set.issubset(empty_set):
+        for priority in pfc_set:
+            pfc_enable += str(priority) + ","
+
+    qosmap["pfc_enable"] = pfc_enable[:-1]
+    config_db.set_entry("PORT_QOS_MAP", interface_name, qosmap)
 
 #
 # 'headroom_override' subgroup ('config interface headroom_override ...')
@@ -2231,6 +2261,7 @@ def add(ctx, interface_name, profile, pg_map):
 
     # All checking passed
     config_db.set_entry("BUFFER_PG", (interface_name, pg_map), {"profile": "[{}]".format(profile_full_name)})
+    adjust_pfc_enable(ctx, interface_name, pg_map, True)
 
 #
 # 'remove' command ('config interface headroom_override remove ...')
@@ -2277,6 +2308,7 @@ def add(ctx, interface_name, pg_map):
 
     # All checking passed
     config_db.set_entry("BUFFER_PG", (interface_name, pg_map), {"NULL": "NULL"})
+    adjust_pfc_enable(ctx, interface_name, pg_map, True)
 
 #
 # 'remove' subcommand
