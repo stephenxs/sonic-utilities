@@ -2207,20 +2207,26 @@ def adjust_pfc_enable(ctx, interface_name, pg_map, add):
         for priority in pfc_enable.split(","):
             pfc_set.add(int(priority))
 
-    lower_bound = int(pg_map[0])
-    upper_bound = int(pg_map[-1])
+    if pg_map:
+        lower_bound = int(pg_map[0])
+        upper_bound = int(pg_map[-1])
 
-    for priority in range(lower_bound, upper_bound + 1):
-        if add:
-            pfc_set.add(priority)
-        elif priority in pfc_set:
-            pfc_set.remove(priority)
+        for priority in range(lower_bound, upper_bound + 1):
+            if add:
+                pfc_set.add(priority)
+            elif priority in pfc_set:
+                pfc_set.remove(priority)
 
-    empty_set = set()
-    pfc_enable = ""
-    if not pfc_set.issubset(empty_set):
-        for priority in pfc_set:
-            pfc_enable += str(priority) + ","
+        empty_set = set()
+        pfc_enable = ""
+        if not pfc_set.issubset(empty_set):
+            for priority in pfc_set:
+                pfc_enable += str(priority) + ","
+    elif not add:
+        # Remove all
+        pfc_enable = ""
+    else:
+        ctx.fail("Try to add empty priorities")
 
     qosmap["pfc_enable"] = pfc_enable[:-1]
     config_db.set_entry("PORT_QOS_MAP", interface_name, qosmap)
