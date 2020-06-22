@@ -410,13 +410,21 @@ class DBMigrator():
                 continue
             speed = m.group(1)
             cable_length = m.group(2)
-            if speed in speed_list and cable_length in cable_len_list:
+            if speed in speed_list and cable_length in cable_len_list and info["dynamic_th"] == "0":
                 self.configDB.set_entry('BUFFER_PROFILE', name, None)
+
+        # Insert other tables required for dynamic buffer calculation
+        self.configDB.set_entry('DEFAULT_LOSSLESS_BUFFER_PARAMETER', 'AZURE', {"default_dynamic_th": "0"})
+        self.configDB.set_entry('LOSSLESS_TRAFFIC_PATTERN', 'AZURE', {
+                                'mtu': '1500', 'small_packet_percentage': '100'})
 
         # Migrate BUFFER_PGs, removing the explicit designated profiles
         buffer_pgs = self.configDB.get_table('BUFFER_PG')
         ports = self.configDB.get_table('PORT')
         all_cable_lengths = self.configDB.get_table('CABLE_LENGTH')
+        if not buffer_pgs or not ports or not all_cable_lengths:
+            return True
+
         cable_lengths = all_cable_lengths[all_cable_lengths.keys()[0]]
         for name, profile in buffer_pgs.iteritems():
             port, pg = name
@@ -435,11 +443,6 @@ class DBMigrator():
                     self.configDB.set_entry('BUFFER_PG', name, {'NULL': 'NULL'})
             except:
                 continue
-
-        # Insert other tables required for dynamic buffer calculation
-        self.configDB.set_entry('DEFAULT_LOSSLESS_BUFFER_PARAMETER', 'AZURE', {"default_dynamic_th": "0"})
-        self.configDB.set_entry('LOSSLESS_TRAFFIC_PATTERN', 'AZURE', {
-                                'mtu': '1500', 'small_packet_percentage': '100'})
 
         return True
 
