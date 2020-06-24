@@ -357,14 +357,15 @@ class DBMigrator():
         return True
 
 
-    def mlnx_migrate_buffer_table_to_appl_db(self, entries, table_name, reference_field_name):
+    def migrate_buffer_table_to_appl_db(self, entries, table_name, reference_field_name = None):
         """
         tool function: copy tables from config db to appl db
         """
         for key, items in entries.iteritems():
             # copy items to appl db
-            confdb_profile_ref = items[reference_field_name]
-            items[reference_field_name] = confdb_profile_ref.replace('|', ':')
+            if reference_field_name:
+                confdb_profile_ref = items[reference_field_name]
+                items[reference_field_name] = confdb_profile_ref.replace('|', ':')
             if type(key) is tuple:
                 appl_db_key = ':'.join(key)
             else:
@@ -404,6 +405,8 @@ class DBMigrator():
             buffer_profile_new_configure = self.mlnx_default_buffer_parameters("version_1_0_4", "profiles")
         else:
             buffer_profile_new_configure = self.mlnx_default_buffer_parameters("version_1_0_5", "profiles")
+            if hwsku in single_ingress_pool_skus:
+                buffer_profile_new_configure["ingress_lossy_profile"]["pool"] = "[BUFFER_POOL|ingress_lossless_pool]"
         # new port ingress buffer list configurations
         buffer_port_ingress_profile_list_new = "[BUFFER_PROFILE|ingress_lossless_profile]"
 
@@ -421,13 +424,13 @@ class DBMigrator():
 
         if copy_to_appl_only:
             # don't migrate buffer profile configuration, just copy them to appl db
-            self.mlnx_migrate_buffer_table_to_appl_db(buffer_profile_conf, 'BUFFER_PROFILE', 'pool')
+            self.migrate_buffer_table_to_appl_db(buffer_profile_conf, 'BUFFER_PROFILE', 'pool')
             return True
         else:
             for name, profile in buffer_profile_new_configure.iteritems():
                 self.configDB.set_entry('BUFFER_PROFILE', name, profile)
             buffer_profile_conf = self.configDB.get_table('BUFFER_PROFILE')
-            self.mlnx_migrate_buffer_table_to_appl_db(buffer_profile_conf, 'BUFFER_PROFILE', 'pool')
+            self.migrate_buffer_table_to_appl_db(buffer_profile_conf, 'BUFFER_PROFILE', 'pool')
 
         if single_pool:
             buffer_port_ingress_profile_list_conf = self.configDB.get_table('BUFFER_PORT_INGRESS_PROFILE_LIST')
@@ -501,15 +504,32 @@ class DBMigrator():
 
         # copy BUFFER_QUEUE, BUFFER_PORT_INGRESS_PROFILE_LIST and BUFFER_PORT_EGRESS_PROFILE_LIST to appl db
         if is_warmreboot:
-            self.mlnx_migrate_buffer_table_to_appl_db(buffer_pgs, 'BUFFER_PG', 'profile')
+            self.migrate_buffer_table_to_appl_db(buffer_pgs, 'BUFFER_PG', 'profile')
             buffer_queues = self.configDB.get_table('BUFFER_QUEUE')
-            self.mlnx_migrate_buffer_table_to_appl_db(buffer_queues, 'BUFFER_QUEUE', 'profile')
+            self.migrate_buffer_table_to_appl_db(buffer_queues, 'BUFFER_QUEUE', 'profile')
             buffer_port_ingress_profile_list = self.configDB.get_table('BUFFER_PORT_INGRESS_PROFILE_LIST')
-            self.mlnx_migrate_buffer_table_to_appl_db(buffer_port_ingress_profile_list, 'BUFFER_PORT_INGRESS_PROFILE_LIST', 'profile_list')
+            self.migrate_buffer_table_to_appl_db(buffer_port_ingress_profile_list, 'BUFFER_PORT_INGRESS_PROFILE_LIST', 'profile_list')
             buffer_port_egress_profile_list = self.configDB.get_table('BUFFER_PORT_EGRESS_PROFILE_LIST')
-            self.mlnx_migrate_buffer_table_to_appl_db(buffer_port_egress_profile_list, 'BUFFER_PORT_EGRESS_PROFILE_LIST', 'profile_list')
+            self.migrate_buffer_table_to_appl_db(buffer_port_egress_profile_list, 'BUFFER_PORT_EGRESS_PROFILE_LIST', 'profile_list')
 
         return True
+
+
+    def copy_buffer_table_to_appl_db(self, is_warmreboot):
+        if is_warmreboot:
+            buffer_pools = self.configDB.get_table('BUFFER_POOL')
+            self.migrate_buffer_table_to_appl_db(buffer_pools, 'BUFFER_POOL')
+            buffer_profiles = self.configDB.get_table('BUFFER_PROFILE')
+            self.migrate_buffer_table_to_appl_db(buffer_profiles, 'BUFFER_PROFILE', 'pool')
+            buffer_pgs = self.configDB.get_table('BUFFER_PG')
+            self.migrate_buffer_table_to_appl_db(buffer_pgs, 'BUFFER_PG', 'profile')
+            buffer_queues = self.configDB.get_table('BUFFER_QUEUE')
+            self.migrate_buffer_table_to_appl_db(buffer_queues, 'BUFFER_QUEUE', 'profile')
+            buffer_port_ingress_profile_list = self.configDB.get_table('BUFFER_PORT_INGRESS_PROFILE_LIST')
+            self.migrate_buffer_table_to_appl_db(buffer_port_ingress_profile_list, 'BUFFER_PORT_INGRESS_PROFILE_LIST', 'profile_list')
+            buffer_port_egress_profile_list = self.configDB.get_table('BUFFER_PORT_EGRESS_PROFILE_LIST')
+            self.migrate_buffer_table_to_appl_db(buffer_port_egress_profile_list, 'BUFFER_PORT_EGRESS_PROFILE_LIST', 'profile_list')
+
 
     def version_unknown(self):
         """
@@ -583,13 +603,15 @@ class DBMigrator():
         log_info('Handling version_1_0_4')
 
         version_info = sonic_device_util.get_sonic_version_info()
+
+        warmreboot_state = self.stateDB.get_entry('WARM_RESTART_ENABLE_TABLE', 'system')
+        if 'enable' in warmreboot_state.keys():
+            is_warmreboot = warmreboot_state['enable'] == 'true'
+        else:
+            is_warmreboot = False
+
         if version_info['asic_type'] == "mellanox":
             # This is to migrate to dynamic buffer calculation
-            warmreboot_state = self.stateDB.get_entry('WARM_RESTART_ENABLE_TABLE', 'system')
-            if 'enable' in warmreboot_state.keys():
-                is_warmreboot = warmreboot_state['enable'] == 'true'
-            else:
-                is_warmreboot = False
             if is_warmreboot:
                 self.stateDB.set_entry('WARM_RESTART_TABLE', 'buffermgrd', {'restore_count': '0'})
             if self.mlnx_migrate_buffer_pool_size('version_1_0_4', 'version_1_0_5') \
@@ -597,6 +619,7 @@ class DBMigrator():
                and self.mlnx_migrate_buffer_dynamic_calculation(is_warmreboot):
                 self.set_version('version_1_0_5')
         else:
+            self.copy_buffer_table_to_appl_db(is_warmreboot)
             self.set_version('version_1_0_5')
 
         return 'version_1_0_5'
