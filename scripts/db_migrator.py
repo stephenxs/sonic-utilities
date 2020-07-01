@@ -241,10 +241,14 @@ class DBMigrator():
 
     def mlnx_migrate_buffer_pool_size(self, old_version, new_version):
         """
+        v1.0.3:
         On Mellanox platform the buffer pool size changed since 
         version with new SDK 4.3.3052, SONiC to SONiC update 
         from version with old SDK will be broken without migration.
         This migration is specifically for Mellanox platform.
+        v1.0.4:
+        Single ingress buffer is supported, which also affects the
+        buffer pool settings on some SKUs
         """
         buffer_pool_conf = {}
         device_data = self.configDB.get_table('DEVICE_METADATA')
@@ -361,6 +365,7 @@ class DBMigrator():
         """
         tool function: copy tables from config db to appl db
         """
+        log_info('Table {} is copied from CONFIG_DB to APPL_DB'.format(table_name))
         for key, items in entries.iteritems():
             # copy items to appl db
             if reference_field_name:
@@ -417,8 +422,10 @@ class DBMigrator():
             if name in buffer_profile_conf.keys() and profile == buffer_profile_old_configure[name]:
                 continue
             # return if any default profile isn't in cofiguration
+            log_info("BUFFER_PROFILE {} doesn't match the default configuration, won't migrate buffer profiles".format(name))
             if warmreboot_to_dynamic_headroom:
                 copy_to_appl_only = True
+                log_info("will copy them to APPL_DB only")
             else:
                 return True
 
@@ -457,6 +464,8 @@ class DBMigrator():
         4. Copy all other tables to the application db
         """
         # Migrate BUFFER_PROFILEs, removing dynamically generated profiles
+        log_info('Migrate BUFFER tables for dynamic buffer calculation')
+
         dynamic_profile = self.configDB.get_table('BUFFER_PROFILE')
         profile_pattern = 'pg_lossless_([0-9]*000)_([0-9]*m)_profile'
         speed_list = ['1000', '10000', '25000', '40000', '50000', '100000', '200000', '400000']
@@ -469,6 +478,7 @@ class DBMigrator():
             cable_length = m.group(2)
             if speed in speed_list and cable_length in cable_len_list and info["dynamic_th"] == "0":
                 self.configDB.set_entry('BUFFER_PROFILE', name, None)
+                log_info('BUFFER_PROFILE: Remove dynamic calculated profile {} from database'.format(name))
 
         # Insert other tables required for dynamic buffer calculation
         self.configDB.set_entry('DEFAULT_LOSSLESS_BUFFER_PARAMETER', 'AZURE', {"default_dynamic_th": "0"})
@@ -480,6 +490,7 @@ class DBMigrator():
         ports = self.configDB.get_table('PORT')
         all_cable_lengths = self.configDB.get_table('CABLE_LENGTH')
         if not buffer_pgs or not ports or not all_cable_lengths:
+            log_info('BUFFER_PG or PORT or CABLE_LENGTH is not configured, skip migration for dynamic buffer calculation')
             return True
 
         cable_lengths = all_cable_lengths[all_cable_lengths.keys()[0]]
@@ -499,6 +510,7 @@ class DBMigrator():
             try:
                 if speed == ports[port]["speed"] and cable_length == cable_lengths[port]:
                     self.configDB.set_entry('BUFFER_PG', name, {'NULL': 'NULL'})
+                    log_info('BUFFER_PG: Migrate BUFFER_PG|{}'.format(name))
             except:
                 continue
 
@@ -614,6 +626,7 @@ class DBMigrator():
             # This is to migrate to dynamic buffer calculation
             if is_warmreboot:
                 self.stateDB.set_entry('WARM_RESTART_TABLE', 'buffermgrd', {'restore_count': '0'})
+                log_info('Handle warm reboot')
             if self.mlnx_migrate_buffer_pool_size('version_1_0_4', 'version_1_0_5') \
                and self.mlnx_migrate_buffer_profile(False, is_warmreboot) \
                and self.mlnx_migrate_buffer_dynamic_calculation(is_warmreboot):
