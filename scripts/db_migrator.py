@@ -103,9 +103,18 @@ class DBMigrator():
         """
         We extract buffer configurations to a common function
         so that it can be reused among different migration
+        This 
+        The logic of buffer parameters migrating:
+        1. Compare the current buffer configuration with the default settings
+        2. If there is a match, map the old setting to a new one acording to the map "pool_mapped_from_old_version"
+        3. Insert the new setting into database
+        Each settings defined below (except that for version_1_0_2) will be used twice:
+        1. It is referenced as new setting when database is migrated to that version
+        2. It is referenced as old setting when database is migrated from that version
         """
         mellanox_default_parameter = {
             "version_1_0_2": {
+                # Buffer pool configuration info
                 "buffer_pool_list" : ['ingress_lossless_pool', 'egress_lossless_pool', 'ingress_lossy_pool', 'egress_lossy_pool'],
                 "spc1_t0_pool": {"ingress_lossless_pool": { "size": "4194304", "type": "ingress", "mode": "dynamic" },
                                  "ingress_lossy_pool": { "size": "7340032", "type": "ingress", "mode": "dynamic" },
@@ -122,9 +131,37 @@ class DBMigrator():
                 "spc2_t1_pool": {"ingress_lossless_pool": { "size": "12042240", "type": "ingress", "mode": "dynamic" },
                                  "ingress_lossy_pool": { "size": "12042240", "type": "ingress", "mode": "dynamic" },
                                  "egress_lossless_pool": { "size": "35966016", "type": "egress", "mode": "dynamic" },
-                                 "egress_lossy_pool": {"size": "12042240", "type": "egress", "mode": "dynamic" } }
+                                 "egress_lossy_pool": {"size": "12042240", "type": "egress", "mode": "dynamic" } },
+
+                # Buffer pool migration control info
+                "pool_configuration_list": ["spc1_t0_pool", "spc1_t1_pool", "spc2_t0_pool", "spc2_t1_pool"]
             },
             "version_1_0_3": {
+                # On Mellanox platform the buffer pool size changed since
+                # version with new SDK 4.3.3052, SONiC to SONiC update
+                # from version with old SDK will be broken without migration.
+                #
+                # Buffer pool migration control info
+                # v1.0.2                   hwsku/platform                     configuration set in v1.0.3
+                # spc1_t0_pool                                                spc1_t0_pool
+                #
+                # spc1_t1_pool                                                spc1_t1_pool
+                #
+                # spc2_t0_pool--platform---x86_64-mlnx_msn3800-r0-------------spc2_3800_t0_pool
+                #                   |
+                #                   +------other spc2 platforms---------------spc2_t0_pool
+                #
+                # spc2_t1_pool--platform---platform: x86_64-mlnx_msn3800-r0---spc2_3800_t1_pool
+                #                   |
+                #                   +------other spc2 platforms---------------spc2_t1_pool
+                #
+                "pool_configuration_list": ["spc1_t0_pool", "spc1_t1_pool", "spc2_t0_pool", "spc2_t1_pool", "spc2_3800_t0_pool", "spc2_3800_t1_pool"],
+                "pool_mapped_from_old_version": {
+                    "spc2_t0_pool": ("platform", {"x86_64-mlnx_msn3800-r0": "spc2_3800_t0_pool"}),
+                    "spc2_t1_pool": ("platform", {"x86_64-mlnx_msn3800-r0": "spc2_3800_t1_pool"})
+                    },
+
+                # Buffer pool configuration info
                 "buffer_pool_list" : ['ingress_lossless_pool', 'egress_lossless_pool', 'ingress_lossy_pool', 'egress_lossy_pool'],
                 "spc1_t0_pool": {"ingress_lossless_pool": { "size": "5029836", "type": "ingress", "mode": "dynamic" },
                                  "ingress_lossy_pool": { "size": "5029836", "type": "ingress", "mode": "dynamic" },
@@ -153,6 +190,8 @@ class DBMigrator():
                                       "ingress_lossy_pool": { "size": "17891280", "type": "ingress", "mode": "dynamic" },
                                       "egress_lossless_pool": { "size": "34340832", "type": "egress", "mode": "dynamic" },
                                       "egress_lossy_pool": {"size": "17891280", "type": "egress", "mode": "dynamic" } },
+
+                # Lossless headroom info
                 "spc1_headroom": {"pg_lossless_10000_5m_profile": {"size": "34816", "xon": "18432"},
                                   "pg_lossless_25000_5m_profile": {"size": "34816", "xon": "18432"},
                                   "pg_lossless_40000_5m_profile": {"size": "34816", "xon": "18432"},
@@ -168,6 +207,27 @@ class DBMigrator():
                                   "pg_lossless_40000_300m_profile": {"size": "94208", "xon": "18432"},
                                   "pg_lossless_50000_300m_profile": {"size": "94208", "xon": "18432"},
                                   "pg_lossless_100000_300m_profile": {"size": "184320", "xon": "18432"}},
+                "spc2_headroom": {"pg_lossless_1000_5m_profile": {"size": "35840", "xon": "18432"},
+                                  "pg_lossless_10000_5m_profile": {"size": "36864", "xon": "18432"},
+                                  "pg_lossless_25000_5m_profile": {"size": "36864", "xon": "18432"},
+                                  "pg_lossless_40000_5m_profile": {"size": "36864", "xon": "18432"},
+                                  "pg_lossless_50000_5m_profile": {"size": "37888", "xon": "18432"},
+                                  "pg_lossless_100000_5m_profile": {"size": "38912", "xon": "18432"},
+                                  "pg_lossless_200000_5m_profile": {"size": "41984", "xon": "18432"},
+                                  "pg_lossless_1000_40m_profile": {"size": "36864", "xon": "18432"},
+                                  "pg_lossless_10000_40m_profile": {"size": "38912", "xon": "18432"},
+                                  "pg_lossless_25000_40m_profile": {"size": "41984", "xon": "18432"},
+                                  "pg_lossless_40000_40m_profile": {"size": "45056", "xon": "18432"},
+                                  "pg_lossless_50000_40m_profile": {"size": "47104", "xon": "18432"},
+                                  "pg_lossless_100000_40m_profile": {"size": "59392", "xon": "18432"},
+                                  "pg_lossless_200000_40m_profile": {"size": "81920", "xon": "18432"},
+                                  "pg_lossless_1000_300m_profile": {"size": "37888", "xon": "18432"},
+                                  "pg_lossless_10000_300m_profile": {"size": "53248", "xon": "18432"},
+                                  "pg_lossless_25000_300m_profile": {"size": "78848", "xon": "18432"},
+                                  "pg_lossless_40000_300m_profile": {"size": "104448", "xon": "18432"},
+                                  "pg_lossless_50000_300m_profile": {"size": "121856", "xon": "18432"},
+                                  "pg_lossless_100000_300m_profile": {"size": "206848", "xon": "18432"},
+                                  "pg_lossless_200000_300m_profile": {"size": "376832", "xon": "18432"}},
                 "spc2_3800_headroom": {"pg_lossless_1000_5m_profile": {"size": "32768", "xon": "18432"},
                                        "pg_lossless_10000_5m_profile": {"size": "34816", "xon": "18432"},
                                        "pg_lossless_25000_5m_profile": {"size": "38912", "xon": "18432"},
@@ -189,6 +249,8 @@ class DBMigrator():
                                        "pg_lossless_50000_300m_profile": {"size": "117760", "xon": "18432"},
                                        "pg_lossless_100000_300m_profile": {"size": "202752", "xon": "18432"},
                                        "pg_lossless_200000_300m_profile": {"size": "373760", "xon": "18432"}},
+
+                # Buffer profile info
                 "buffer_profiles": {"ingress_lossless_profile": {"dynamic_th": "0", "pool": "[BUFFER_POOL|ingress_lossless_pool]", "size": "0"},
                                     "ingress_lossy_profile": {"dynamic_th": "3", "pool": "[BUFFER_POOL|ingress_lossy_pool]", "size": "0"},
                                     "egress_lossless_profile": {"dynamic_th": "7", "pool": "[BUFFER_POOL|egress_lossless_pool]", "size": "0"},
@@ -196,23 +258,119 @@ class DBMigrator():
                                     "q_lossy_profile": {"dynamic_th": "3", "pool": "[BUFFER_POOL|egress_lossy_pool]", "size": "0"}}
             },
             "version_1_0_4": {
-                "buffer_pool_list" : ['ingress_lossless_pool', 'egress_lossless_pool', 'egress_lossy_pool'],
-                "spc1_t0_pool": {"ingress_lossless_pool": { "size": "10608640", "type": "ingress", "mode": "dynamic" },
-                                 "egress_lossless_pool": { "size": "14024640", "type": "egress", "mode": "dynamic" },
-                                 "egress_lossy_pool": {"size": "10608640", "type": "egress", "mode": "dynamic" } },
-                "spc1_t1_pool": {"ingress_lossless_pool": { "size": "7553024", "type": "ingress", "mode": "dynamic" },
-                                 "egress_lossless_pool": { "size": "14024640", "type": "egress", "mode": "dynamic" },
-                                 "egress_lossy_pool": {"size": "7553024", "type": "egress", "mode": "dynamic" } },
+                # version 1.0.4 is introduced for:
+                # 1. Supporting single ingress buffer pool for MSFT SKUs
+                # 2. Updating the buffer settings
+                #
+                # Buffer pool migration control info
+                # v1.0.3              hwsku/platform                     v1.0.4
+                # spc1_t0_pool----hwsku------Mellanox-SN2700-C28D8-------spc1_t0_pool_single_pool
+                #                   |
+                #                   +--------Mellanox-SN2700-D48C8-------spc1_t0_pool_single_pool
+                #                   |
+                #                   +--------all other spc1 hwskus-------spc1_t0_pool
+                #
+                # spc1_t1_pool----hwsku------Mellanox-SN2700-C28D8-------spc1_t1_pool_single_pool
+                #                   |
+                #                   +--------Mellanox-SN2700-D48C8-------spc1_t1_pool_single_pool
+                #                   |
+                #                   +--------all other spc1 hwskus-------spc1_t1_pool
+                #
+                # spc2_3800_t0_pool--hwsku---Mellanox-SN3800-D112C8------spc2_3800_t0_pool_single_pool
+                #                      |
+                #                      +-----Mellanox-SN3800-C64---------spc2_3800_t0_pool_single_pool
+                #                      |
+                #                      +-----Mellanox-SN3800-D24C52------spc2_3800_t0_pool_single_pool
+                #                      |
+                #                      +-----Mellanox-SN3800-D28C50------spc2_3800_t0_pool_single_pool
+                #                      |
+                #                      +-----other 3800 hwskus-----------spc2_3800_t0_pool
+                #
+                # spc2_3800_t1_pool--hwsku---Mellanox-SN3800-D112C8------spc2_3800_t1_pool_single_pool
+                #                      |
+                #                      +-----Mellanox-SN3800-C64---------spc2_3800_t1_pool_single_pool
+                #                      |
+                #                      +-----Mellanox-SN3800-D24C52------spc2_3800_t1_pool_single_pool
+                #                      |
+                #                      +-----Mellanox-SN3800-D28C50------spc2_3800_t1_pool_single_pool
+                #                      |
+                #                      +-----other 3800 hwskus-----------spc2_3800_t1_pool
+                #
+                "pool_configuration_list": ["spc1_t0_pool", "spc1_t1_pool", "spc2_t0_pool", "spc2_t1_pool", "spc2_3800_t0_pool", "spc2_3800_t1_pool",
+                               "spc1_t0_pool_single_pool", "spc1_t1_pool_single_pool", "spc2_3800_t0_pool_single_pool", "spc2_3800_t1_pool_single_pool"],
+                "pool_mapped_from_old_version": {
+                    "spc1_t0_pool": ("sku",
+                                     {"Mellanox-SN2700-C28D8": "spc1_t0_pool_single_pool",
+                                      "Mellanox-SN2700-D48C8": "spc1_t0_pool_single_pool"}),
+                    "spc1_t1_pool": ("sku",
+                                     {"Mellanox-SN2700-C28D8": "spc1_t1_pool_single_pool",
+                                      "Mellanox-SN2700-D48C8": "spc1_t1_pool_single_pool"}),
+                    "spc2_3800_t0_pool": ("sku",
+                                          {"Mellanox-SN3800-D112C8": "spc2_3800_t0_pool_single_pool",
+                                           "Mellanox-SN3800-C64": "spc2_3800_t0_pool_single_pool",
+                                           "Mellanox-SN3800-D24C52": "spc2_3800_t0_pool_single_pool",
+                                           "Mellanox-SN3800-D28C50": "spc2_3800_t0_pool_single_pool"}),
+                    "spc2_3800_t1_pool": ("sku",
+                                          {"Mellanox-SN3800-D112C8": "spc2_3800_t1_pool_single_pool",
+                                           "Mellanox-SN3800-C64": "spc2_3800_t1_pool_single_pool",
+                                           "Mellanox-SN3800-D24C52": "spc2_3800_t1_pool_single_pool",
+                                           "Mellanox-SN3800-D28C50": "spc2_3800_t1_pool_single_pool"})
+                    },
 
-                "spc2_3800_t0_pool": {"ingress_lossless_pool": { "size": "27598848", "type": "ingress", "mode": "dynamic" },
-                                      "egress_lossless_pool": { "size": "34340832", "type": "egress", "mode": "dynamic" },
-                                      "egress_lossy_pool": {"size": "27598848", "type": "egress", "mode": "dynamic" } },
-                "spc2_3800_t1_pool": {"ingress_lossless_pool": { "size": "20627456", "type": "ingress", "mode": "dynamic" },
-                                      "egress_lossless_pool": { "size": "34340832", "type": "egress", "mode": "dynamic" },
-                                      "egress_lossy_pool": {"size": "20627456", "type": "egress", "mode": "dynamic" } },
+                # Buffer pool info for single pool mode
+                "buffer_pool_list_single_pool" : ['ingress_lossless_pool', 'egress_lossless_pool', 'egress_lossy_pool'],
+                "spc1_t0_pool_single_pool": {"ingress_lossless_pool": { "size": "10608640", "type": "ingress", "mode": "dynamic" },
+                                             "egress_lossless_pool": { "size": "14024640", "type": "egress", "mode": "dynamic" },
+                                             "egress_lossy_pool": {"size": "10608640", "type": "egress", "mode": "dynamic" } },
+                "spc1_t1_pool_single_pool": {"ingress_lossless_pool": { "size": "7553024", "type": "ingress", "mode": "dynamic" },
+                                             "egress_lossless_pool": { "size": "14024640", "type": "egress", "mode": "dynamic" },
+                                             "egress_lossy_pool": {"size": "7553024", "type": "egress", "mode": "dynamic" } },
 
+                "spc2_3800_t0_pool_single_pool": {"ingress_lossless_pool": { "size": "27598848", "type": "ingress", "mode": "dynamic" },
+                                                  "egress_lossless_pool": { "size": "34340832", "type": "egress", "mode": "dynamic" },
+                                                  "egress_lossy_pool": {"size": "27598848", "type": "egress", "mode": "dynamic" } },
+                "spc2_3800_t1_pool_single_pool": {"ingress_lossless_pool": { "size": "20627456", "type": "ingress", "mode": "dynamic" },
+                                                  "egress_lossless_pool": { "size": "34340832", "type": "egress", "mode": "dynamic" },
+                                                  "egress_lossy_pool": {"size": "20627456", "type": "egress", "mode": "dynamic" } },
+
+                "buffer_profiles_single_pool": {"ingress_lossless_profile": {"dynamic_th": "7", "pool": "[BUFFER_POOL|ingress_lossless_pool]", "size": "0"},
+                                                "ingress_lossy_profile": {"dynamic_th": "3", "pool": "[BUFFER_POOL|ingress_lossless_pool]", "size": "0"},
+                                                "egress_lossless_profile": {"dynamic_th": "7", "pool": "[BUFFER_POOL|egress_lossless_pool]", "size": "0"},
+                                                "egress_lossy_profile": {"dynamic_th": "7", "pool": "[BUFFER_POOL|egress_lossy_pool]", "size": "9216"},
+                                                "q_lossy_profile": {"dynamic_th": "3", "pool": "[BUFFER_POOL|egress_lossy_pool]", "size": "0"}},
+
+                # Buffer pool info for normal mode
+                "buffer_pool_list" : ['ingress_lossless_pool', 'ingress_lossy_pool', 'egress_lossless_pool', 'egress_lossy_pool'],
+                "spc1_t0_pool": {"ingress_lossless_pool": { "size": "5304320", "type": "ingress", "mode": "dynamic" },
+                                 "ingress_lossy_pool": { "size": "5304320", "type": "ingress", "mode": "dynamic" },
+                                 "egress_lossless_pool": { "size": "14024640", "type": "egress", "mode": "dynamic" },
+                                 "egress_lossy_pool": {"size": "5304320", "type": "egress", "mode": "dynamic" } },
+                "spc1_t1_pool": {"ingress_lossless_pool": { "size": "2736128", "type": "ingress", "mode": "dynamic" },
+                                 "ingress_lossy_pool": { "size": "2736128", "type": "ingress", "mode": "dynamic" },
+                                 "egress_lossless_pool": { "size": "14024640", "type": "egress", "mode": "dynamic" },
+                                 "egress_lossy_pool": {"size": "2736128", "type": "egress", "mode": "dynamic" } },
+
+                "spc2_t0_pool": {"ingress_lossless_pool": { "size": "15241216", "type": "ingress", "mode": "dynamic" },
+                                 "ingress_lossy_pool": { "size": "15241216", "type": "ingress", "mode": "dynamic" },
+                                 "egress_lossless_pool": { "size": "34340832", "type": "egress", "mode": "dynamic" },
+                                 "egress_lossy_pool": {"size": "15241216", "type": "egress", "mode": "dynamic" } },
+                "spc2_t1_pool": {"ingress_lossless_pool": { "size": "9388032", "type": "ingress", "mode": "dynamic" },
+                                 "ingress_lossy_pool": { "size": "9388032", "type": "ingress", "mode": "dynamic" },
+                                 "egress_lossless_pool": { "size": "14024640", "type": "egress", "mode": "dynamic" },
+                                 "egress_lossy_pool": {"size": "9388032", "type": "egress", "mode": "dynamic" } },
+
+                "spc2_3800_t0_pool": {"ingress_lossless_pool": { "size": "13799424", "type": "ingress", "mode": "dynamic" },
+                                      "ingress_lossy_pool": { "size": "13799424", "type": "ingress", "mode": "dynamic" },
+                                      "egress_lossless_pool": { "size": "34340832", "type": "egress", "mode": "dynamic" },
+                                      "egress_lossy_pool": {"size": "13799424", "type": "egress", "mode": "dynamic" } },
+                "spc2_3800_t1_pool": {"ingress_lossless_pool": { "size": "7946240", "type": "ingress", "mode": "dynamic" },
+                                      "ingress_lossy_pool": { "size": "7946240", "type": "ingress", "mode": "dynamic" },
+                                      "egress_lossless_pool": { "size": "34340832", "type": "egress", "mode": "dynamic" },
+                                      "egress_lossy_pool": {"size": "7946240", "type": "egress", "mode": "dynamic" } },
+
+                # Buffer profile info
                 "buffer_profiles": {"ingress_lossless_profile": {"dynamic_th": "7", "pool": "[BUFFER_POOL|ingress_lossless_pool]", "size": "0"},
-                                    "ingress_lossy_profile": {"dynamic_th": "3", "pool": "[BUFFER_POOL|ingress_lossless_pool]", "size": "0"},
+                                    "ingress_lossy_profile": {"dynamic_th": "3", "pool": "[BUFFER_POOL|ingress_lossy_pool]", "size": "0"},
                                     "egress_lossless_profile": {"dynamic_th": "7", "pool": "[BUFFER_POOL|egress_lossless_pool]", "size": "0"},
                                     "egress_lossy_profile": {"dynamic_th": "7", "pool": "[BUFFER_POOL|egress_lossy_pool]", "size": "9216"},
                                     "q_lossy_profile": {"dynamic_th": "3", "pool": "[BUFFER_POOL|egress_lossy_pool]", "size": "0"}}
@@ -244,31 +402,19 @@ class DBMigrator():
             log_error("Trying to get DEVICE_METADATA from DB but doesn't exist, skip migration")
             return False
 
-        # SKUs that have single ingress buffer pool
-        single_ingress_pool_skus = ['Mellanox-SN2700-C28D8', 'Mellanox-SN2700-D48C8', 'Mellanox-SN3800-D112C8', 'Mellanox-SN3800-C64', 'Mellanox-SN3800-D24C52', 'Mellanox-SN3800-D28C50']
-        if not hwsku in single_ingress_pool_skus:
-            if new_version == "version_1_0_4":
-                return True
-
         # Buffer pools defined in old version
-        old_buffer_pools = self.mlnx_default_buffer_parameters(old_version, "buffer_pool_list")
-
-        # Old default buffer pool values on Mellanox platform 
-        spc1_t0_old_default_config = self.mlnx_default_buffer_parameters(old_version, "spc1_t0_pool")
-        spc1_t1_old_default_config = self.mlnx_default_buffer_parameters(old_version, "spc1_t1_pool")
-        spc2_t0_old_default_config = self.mlnx_default_buffer_parameters(old_version, "spc2_t0_pool")
-        spc2_t1_old_default_config = self.mlnx_default_buffer_parameters(old_version, "spc2_t1_pool")
-
-        # New default buffer pool configuration on Mellanox platform
-        spc1_t0_new_default_config = self.mlnx_default_buffer_parameters(new_version, "spc1_t0_pool")
-        spc1_t1_new_default_config = self.mlnx_default_buffer_parameters(new_version, "spc1_t1_pool")
-
-        spc2_t0_new_default_config = self.mlnx_default_buffer_parameters(new_version, "spc2_t0_pool")
-        spc2_t1_new_default_config = self.mlnx_default_buffer_parameters(new_version, "spc2_t1_pool")
-
-        # 3800 platform has gearbox installed so the buffer pool size is different with other Spectrum2 platform
-        spc2_3800_t0_new_default_config = self.mlnx_default_buffer_parameters(new_version, "spc2_3800_t0_pool")
-        spc2_3800_t1_new_default_config = self.mlnx_default_buffer_parameters(new_version, "spc2_3800_t1_pool")
+        single_ingress_pool_skus = [
+            'Mellanox-SN2700-C28D8', 'Mellanox-SN2700-D48C8',
+            'Mellanox-SN3800-D112C8', 'Mellanox-SN3800-C64', 'Mellanox-SN3800-D24C52', 'Mellanox-SN3800-D28C50'
+        ]
+        old_buffer_pools = None
+        if hwsku in single_ingress_pool_skus:
+            old_buffer_pools = self.mlnx_default_buffer_parameters(old_version, "buffer_pool_list_single_pool")
+        if not old_buffer_pools:
+            # Two cases that old_buffer_pools is None
+            # 1. It's not the single ingress pool SKU
+            # 2. The old_version is 1.0.2/1.0.3 in which the single buffer hasn't been introduced
+            old_buffer_pools = self.mlnx_default_buffer_parameters(old_version, "buffer_pool_list")
  
         # Try to get related info from DB
         buffer_pool_conf = self.configDB.get_table('BUFFER_POOL')
@@ -288,33 +434,41 @@ class DBMigrator():
                 return True
             config_of_default_pools_in_db[buffer_pool] = buffer_pool_conf[buffer_pool]
 
-        # To check if the buffer pool size is equal to old default values
-        new_buffer_pool_conf = None
-        if config_of_default_pools_in_db == spc1_t0_old_default_config:
-            new_buffer_pool_conf = spc1_t0_new_default_config
-        elif config_of_default_pools_in_db == spc1_t1_old_default_config:
-            new_buffer_pool_conf = spc1_t1_new_default_config
-        elif config_of_default_pools_in_db == spc2_t0_old_default_config:
-            if platform == 'x86_64-mlnx_msn3800-r0':
-                new_buffer_pool_conf = spc2_3800_t0_new_default_config
-            else:
-                new_buffer_pool_conf = spc2_t0_new_default_config
-        elif config_of_default_pools_in_db == spc2_t1_old_default_config:
-            if platform == 'x86_64-mlnx_msn3800-r0':
-                new_buffer_pool_conf = spc2_3800_t1_new_default_config
-            else:
-                new_buffer_pool_conf = spc2_t1_new_default_config
-        else:
-            spc2_3800_t0_old_default_config = self.mlnx_default_buffer_parameters(old_version, "spc2_3800_t0_pool")
-            spc2_3800_t1_old_default_config = self.mlnx_default_buffer_parameters(old_version, "spc2_3800_t1_pool")
-            if config_of_default_pools_in_db == spc2_3800_t0_old_default_config:
-                new_buffer_pool_conf = spc2_3800_t0_new_default_config
-            elif config_of_default_pools_in_db == spc2_3800_t1_old_default_config:
-                new_buffer_pool_conf = spc2_3800_t1_new_default_config            
-            else:
-                # It's not using default buffer pool configuration, no migration needed.
-                log_info("buffer pool size is not old default value, no need to migrate")
-                return True
+        old_pool_configuration_list = self.mlnx_default_buffer_parameters(old_version, "pool_configuration_list")
+        pool_migration_control = self.mlnx_default_buffer_parameters(new_version, "pool_mapped_from_old_version")
+        if not old_pool_configuration_list or not pool_migration_control:
+            log_error("Trying to get pool configuration list or migration control failed, skip migration")
+            return False
+        new_config_name = None
+        for old_pool_name in old_pool_configuration_list:
+            old_config = self.mlnx_default_buffer_parameters(old_version, old_pool_name)
+            log_info("Checking old pool configuration {}".format(old_pool_name))
+            if config_of_default_pools_in_db == old_config:
+                if old_pool_name in pool_migration_control.keys():
+                    method, mapping = pool_migration_control[old_pool_name]
+                    if method == "platform":
+                        new_config_name = mapping.find(platform)
+                    elif method == "sku":
+                        new_config_name = mapping.get(hwsku)
+                    else:
+                        log_info("Can't find new pool configuration for {}".format(old_pool_name))
+                        return False
+                    if not new_config_name:
+                        new_config_name = old_pool_name
+                    log_info("Old buffer pool configuration {} will be migrate to {} according to {}".format(old_pool_name, new_config_name, method))
+                else:
+                    log_info("Old buffer pool configuration {} will be migrate to new one".format(old_pool_name))
+                    new_config_name = old_pool_name
+                break
+
+        if not new_config_name:
+            log_info("The configuration doesn't match any default configuration, migration for pool isn't required")
+            return True
+
+        new_buffer_pool_conf = self.mlnx_default_buffer_parameters(new_version, new_config_name)
+        if not new_buffer_pool_conf:
+            log_error("Can't find the buffer pool configuration for {}".format(new_config_name))
+            return False
 
         # Migrate old buffer conf to latest.
         for pool in old_buffer_pools:
@@ -323,9 +477,10 @@ class DBMigrator():
             else:
                 self.configDB.set_entry('BUFFER_POOL', pool, None)
             log_info("Successfully migrate mlnx buffer pool size to the latest.")
+
         return True
 
-    def mlnx_migrate_buffer_profile(self):
+    def mlnx_migrate_buffer_profile(self, old_version, new_version):
         """
         This is to migrate BUFFER_PROFILE and BUFFER_PORT_INGRESS_PROFILE_LIST tables
         to single ingress pool mode for Mellanox SKU.
@@ -342,33 +497,37 @@ class DBMigrator():
         single_ingress_pool_skus = ['Mellanox-SN2700-C28D8', 'Mellanox-SN2700-D48C8', 'Mellanox-SN3800-D112C8', 'Mellanox-SN3800-C64', 'Mellanox-SN3800-D24C52', 'Mellanox-SN3800-D28C50']
         spc1_skus = ['Mellanox-SN2700-C28D8', 'Mellanox-SN2700-D48C8']
 
-        if not hwsku in single_ingress_pool_skus:
-            return True
+        need_migrate_buffer_profile_list = False
 
-        # old buffer profile configurations
-        buffer_profile_old_configure = self.mlnx_default_buffer_parameters('version_1_0_3', 'buffer_profiles')
-        # old port ingress buffer list configurations
-        buffer_port_ingress_profile_list_old = "[BUFFER_PROFILE|ingress_lossless_profile],[BUFFER_PROFILE|ingress_lossy_profile]"
-
-        # new buffer profile configurations
-        buffer_profile_new_configure = self.mlnx_default_buffer_parameters('version_1_0_4', 'buffer_profiles')
-        # new port ingress buffer list configurations
-        buffer_port_ingress_profile_list_new = "[BUFFER_PROFILE|ingress_lossless_profile]"
+        # get profile 
+        if hwsku in single_ingress_pool_skus:
+            buffer_profile_old_configure = self.mlnx_default_buffer_parameters(old_version, "buffer_profiles_single_pool")
+            if not buffer_profile_old_configure:
+                # there is no single pool info in the old version
+                buffer_profile_old_configure = self.mlnx_default_buffer_parameters(old_version, "buffer_profiles")
+                need_migrate_buffer_profile_list = True
+                buffer_port_ingress_profile_list_old = "[BUFFER_PROFILE|ingress_lossless_profile],[BUFFER_PROFILE|ingress_lossy_profile]"
+                buffer_port_ingress_profile_list_new = "[BUFFER_PROFILE|ingress_lossless_profile]"
+            buffer_profile_new_configure = self.mlnx_default_buffer_parameters(new_version, "buffer_profiles_single_pool")
+        else:
+            buffer_profile_old_configure = self.mlnx_default_buffer_parameters(old_version, "buffer_profiles")
+            buffer_profile_new_configure = self.mlnx_default_buffer_parameters(new_version, "buffer_profiles")
 
         buffer_profile_conf = self.configDB.get_table('BUFFER_PROFILE')
 
         # we need to transform lossless pg profiles to new settings
         # to achieve that, we just need to remove this kind of profiles, buffermgrd will generate them automatically
-        if hwsku in spc1_skus:
-            default_lossless_profiles = self.mlnx_default_buffer_parameters('version_1_0_3', 'spc1_headroom')
+        if platform == 'x86_64-mlnx_msn3800-r0':
+            default_lossless_profiles = self.mlnx_default_buffer_parameters(old_version, "spc2_3800_headroom")
+        elif platform in ["x86_64-mlnx_msn3700-r0", "x86_64-mlnx_msn3700c-r0"]:
+            default_lossless_profiles = self.mlnx_default_buffer_parameters(old_version, "spc2_headroom")
         else:
-            default_lossless_profiles = self.mlnx_default_buffer_parameters('version_1_0_3', 'spc2_3800_headroom')
+            default_lossless_profiles = self.mlnx_default_buffer_parameters(old_version, "spc1_headroom")
         for name, profile in buffer_profile_conf.iteritems():
             if name in default_lossless_profiles.keys():
                 default_profile = default_lossless_profiles[name]
                 default_profile['dynamic_th'] = '0'
-                default_profile['xon'] = default_profile['xon']
-                default_profile['xoff'] = str(int(default_profile['size']) - 18432)
+                default_profile['xoff'] = str(int(default_profile['size']) - int(default_profile['xon']))
                 default_profile['pool'] = '[BUFFER_POOL|ingress_lossless_pool]'
                 if profile == default_profile:
                     self.configDB.set_entry('BUFFER_PROFILE', name, None)
@@ -379,19 +538,20 @@ class DBMigrator():
             # return if any default profile isn't in cofiguration
             return True
 
-        buffer_port_ingress_profile_list_conf = self.configDB.get_table('BUFFER_PORT_INGRESS_PROFILE_LIST')
-        for profile_list, profiles in buffer_port_ingress_profile_list_conf.iteritems():
-            if profiles['profile_list'] == buffer_port_ingress_profile_list_old:
-                continue
-            # return if any port's profile list isn't default
-            return True
+        if need_migrate_buffer_profile_list:
+            buffer_port_ingress_profile_list_conf = self.configDB.get_table('BUFFER_PORT_INGRESS_PROFILE_LIST')
+            for profile_list, profiles in buffer_port_ingress_profile_list_conf.iteritems():
+                if profiles['profile_list'] == buffer_port_ingress_profile_list_old:
+                    continue
+                # return if any port's profile list isn't default
+                return True
+
+            for name in buffer_port_ingress_profile_list_conf.keys():
+                self.configDB.set_entry('BUFFER_PORT_INGRESS_PROFILE_LIST', name,
+                                        {'profile_list': buffer_port_ingress_profile_list_new})
 
         for name, profile in buffer_profile_new_configure.iteritems():
             self.configDB.set_entry('BUFFER_PROFILE', name, profile)            
-
-        for name in buffer_port_ingress_profile_list_conf.keys():
-            self.configDB.set_entry('BUFFER_PORT_INGRESS_PROFILE_LIST', name,
-                                    {'profile_list': buffer_port_ingress_profile_list_new})
 
     def version_unknown(self):
         """
@@ -448,7 +608,7 @@ class DBMigrator():
         # Check ASIC type, if Mellanox platform then need DB migration
         version_info = sonic_device_util.get_sonic_version_info()
         if version_info['asic_type'] == "mellanox":
-            if self.mlnx_migrate_buffer_pool_size('version_1_0_3', 'version_1_0_4') and self.mlnx_migrate_buffer_profile():
+            if self.mlnx_migrate_buffer_pool_size('version_1_0_3', 'version_1_0_4') and self.mlnx_migrate_buffer_profile('version_1_0_3', 'version_1_0_4'):
                 self.set_version('version_1_0_4')
         else:
             self.set_version('version_1_0_4')
