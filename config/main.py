@@ -3436,11 +3436,26 @@ def set_profile(db, profile, xon, xoff, size, dynamic_th, pool):
     update_profile(ctx, config_db, profile, xon, xoff, size, dynamic_th, pool, profile_entry)
 
 
+def _is_shared_headroom_pool_enabled(ctx, config_db):
+    ingress_lossless_pool = config_db.get_entry('BUFFER_POOL', 'ingress_lossless_pool')
+    if 'xoff' in ingress_lossless_pool:
+        return True
+
+    default_lossless_param_table = config_db.get_table('DEFAULT_LOSSLESS_BUFFER_PARAMETER')
+    default_lossless_param = default_lossless_param_table[list(default_lossless_param_table.keys())[0]]
+    over_subscribe_ratio = default_lossless_param.get('over_subscribe_ratio')
+    if over_subscribe_ratio and over_subscribe_ratio != '0':
+        return True
+
+    return False
+
+
 def update_profile(ctx, config_db, profile_name, xon, xoff, size, dynamic_th, pool, profile_entry = None):
     params = {}
     if profile_entry:
         params = profile_entry
-    dynamic_calculate = True
+
+    shp_enabled = _is_shared_headroom_pool_enabled(ctx, config_db)
 
     if not pool:
         pool = 'ingress_lossless_pool'
@@ -3450,48 +3465,64 @@ def update_profile(ctx, config_db, profile_name, xon, xoff, size, dynamic_th, po
 
     if xon:
         params['xon'] = xon
-        dynamic_calculate = False
     else:
         xon = params.get('xon')
 
+    dynamic_calculate = not xon
+
     if xoff:
         params['xoff'] = xoff
-        dynamic_calculate = False
     else:
         xoff = params.get('xoff')
 
     if size:
         params['size'] = size
-        dynamic_calculate = False
-        if xon and not xoff:
-            xoff = int(size) - int (xon)
-            params['xoff'] = xoff
-    elif not dynamic_calculate:
-        if xon and xoff:
-            size = int(xon) + int(xoff)
-            params['size'] = size
-        else:
-            ctx.fail("Either both xon and xoff or size should be provided")
+    else:
+        size = params.get('size')
+
+    dynamic_calculate = False if (xon or xoff or size) else True
 
     if dynamic_calculate:
         params['headroom_type'] = 'dynamic'
         if not dynamic_th:
             ctx.fail("Either size information (xon, xoff, size) or dynamic_th needs to be provided")
-
-    if dynamic_th:
         params['dynamic_th'] = dynamic_th
     else:
-        # Fetch all the keys of default_lossless_buffer_parameter table
-        # and then get the default_dynamic_th from that entry (should be only one)
-        keys = config_db.get_keys('DEFAULT_LOSSLESS_BUFFER_PARAMETER')
-        if len(keys) > 1 or len(keys) == 0:
-            ctx.fail("Multiple or no entry in DEFAULT_LOSSLESS_BUFFER_PARAMETER found while no dynamic_th specified")
+        if not xon:
+            ctx.fail("Xon is mandatory for non-dynamic profile")
 
-        default_lossless_param = config_db.get_entry('DEFAULT_LOSSLESS_BUFFER_PARAMETER', keys[0])
-        if 'default_dynamic_th' in default_lossless_param.keys():
-            params['dynamic_th'] = default_lossless_param['default_dynamic_th']
-        else:
-            ctx.fail("No dynamic_th defined in DEFAULT_LOSSLESS_BUFFER_PARAMETER")
+        if not xoff:
+            if shp_enabled:
+                ctx.fail("Shared headroom pool is enabled, xoff is mandatory for non-dynamic profile")
+            elif not size:
+                ctx.fail("Neither xoff nor size is provided")
+            else:
+                xoff = int(size) - int(xon)
+                if xoff <= 0:
+                    ctx.fail("xoff must be greater than 0")
+                params['xoff'] = xoff
+
+        if not size:
+            if shp_enabled:
+                size = int(xon)
+            else:
+                size = int(xon) + (xoff)
+            params['size'] = size
+
+        if dynamic_th:
+            params['dynamic_th'] = dynamic_th
+        elif not params.get('dynamic_th'):
+            # Fetch all the keys of default_lossless_buffer_parameter table
+            # and then get the default_dynamic_th from that entry (should be only one)
+            keys = config_db.get_keys('DEFAULT_LOSSLESS_BUFFER_PARAMETER')
+            if len(keys) > 1 or len(keys) == 0:
+                ctx.fail("Multiple or no entry in DEFAULT_LOSSLESS_BUFFER_PARAMETER found while no dynamic_th specified")
+
+            default_lossless_param = config_db.get_entry('DEFAULT_LOSSLESS_BUFFER_PARAMETER', keys[0])
+            if 'default_dynamic_th' in default_lossless_param.keys():
+                params['dynamic_th'] = default_lossless_param['default_dynamic_th']
+            else:
+                ctx.fail("No dynamic_th defined in DEFAULT_LOSSLESS_BUFFER_PARAMETER")
 
     config_db.set_entry("BUFFER_PROFILE", (profile_name), params)
 
@@ -3516,6 +3547,72 @@ def remove_profile(db, profile):
         config_db.set_entry("BUFFER_PROFILE", profile, None)
     else:
         ctx.fail("Profile {} doesn't exist".format(profile))
+
+@buffer.group(cls=clicommon.AbbreviationGroup)
+@click.pass_context
+def shared_headroom_pool(ctx):
+    """Configure buffer shared headroom pool"""
+    pass
+
+
+@shared_headroom_pool.command()
+@click.argument('ratio', metavar='<ratio>', required=True)
+@clicommon.pass_db
+def over_subscribe_ratio(db, ratio):
+    """Configure over subscribe ratio"""
+    try:
+        ratio_in_number = int(ratio)
+    except ValueError as e:
+        ctx.fail("over-subscribe-ratio should be a number")
+
+    config_db = db.cfgdb
+    ctx = click.get_current_context()
+
+    if ratio_in_number < 0 or ratio_in_number > 16:
+        ctx.fail("Invalid over-subscribe-ratio value {}. It should be in range [0, 16]".format(ratio))
+
+    remove = ratio == 0
+
+    default_lossless_param = config_db.get_table("DEFAULT_LOSSLESS_BUFFER_PARAMETER")
+    first_item = True
+    for k, v in default_lossless_param.items():
+        if not first_item:
+            ctx.fail("More than one item in DEFAULT_LOSSLESS_BUFFER_PARAMETER table. Only the first one is updated")
+        first_item = False
+
+        if remove:
+            if "over_subscribe_ratio" in v.keys():
+                v.pop("over_subscribe_ratio")
+        else:
+            v["over_subscribe_ratio"] = ratio
+            config_db.set_entry("DEFAULT_LOSSLESS_BUFFER_PARAMETER", k, v)
+
+
+@shared_headroom_pool.command()
+@click.argument('size', metavar='<size>', required=True)
+@clicommon.pass_db
+def size(db, size):
+    """Configure shared headroom pool size"""
+    try:
+        size_number = int(size)
+    except ValueError as e:
+        ctx.fail("size should be a number")
+
+    config_db = db.cfgdb
+    state_db = db.db
+    ctx = click.get_current_context()
+
+    _hash = '{}{}'.format('BUFFER_MAX_PARAM_TABLE|', 'global')
+    buffer_max_params = state_db.get_all(state_db.STATE_DB, _hash)
+    mmu_size = buffer_max_params.get('mmu_size')
+    if mmu_size and int(mmu_size) < size_number:
+        ctx.fail("shared headroom pool must be less than mmu size ({})".format(mmu_size))
+
+    ingress_lossless_pool = config_db.get_entry("BUFFER_POOL", "ingress_lossless_pool")
+    ingress_lossless_pool["xoff"] = size
+
+    config_db.set_entry("BUFFER_POOL", "ingress_lossless_pool", ingress_lossless_pool)
+
 
 #
 # 'platform' group ('config platform ...')

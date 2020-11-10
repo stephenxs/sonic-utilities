@@ -405,23 +405,38 @@ class DBMigrator():
 
     def version_1_0_4(self):
         """
-        Current latest version. Nothing to do here.
+        Version 1_0_4.
         """
         log.log_info('Handling version_1_0_4')
 
         # Check ASIC type, if Mellanox platform then need DB migration
+        if self.asic_type == "mellanox":
+            if self.mellanox_buffer_migrator.mlnx_migrate_buffer_pool_size('version_1_0_4', 'version_1_0_5') \
+               and self.mellanox_buffer_migrator.mlnx_migrate_buffer_profile('version_1_0_4', 'version_1_0_5') \
+               and self.mellanox_buffer_migrator.mlnx_flush_new_buffer_configuration():
+                self.set_version('version_1_0_5')
+        else:
+            self.set_version('version_1_0_5')
+
+        return 'version_1_0_5'
+
+    def version_1_0_5(self):
+        """
+        Current latest version. Nothing to do here.
+        """
+        log.log_info('Handling version_1_0_5')
         if self.asic_type == "mellanox":
             speed_list = self.mellanox_buffer_migrator.default_speed_list
             cable_len_list = self.mellanox_buffer_migrator.default_cable_len_list
             buffer_pools = self.configDB.get_table('BUFFER_POOL')
             buffer_profiles = self.configDB.get_table('BUFFER_PROFILE')
             buffer_pgs = self.configDB.get_table('BUFFER_PG')
-            default_lossless_profiles = self.mellanox_buffer_migrator.mlnx_get_default_lossless_profile('version_1_0_4')
+            default_lossless_profiles = self.mellanox_buffer_migrator.mlnx_get_default_lossless_profile('version_1_0_5')
             abandon_method = self.mellanox_buffer_migrator.mlnx_abandon_pending_buffer_configuration
             append_method = self.mellanox_buffer_migrator.mlnx_append_item_on_pending_configuration_list
 
-            if self.mellanox_buffer_migrator.mlnx_migrate_buffer_pool_size('version_1_0_4', 'version_2_0_0') \
-               and self.mellanox_buffer_migrator.mlnx_migrate_buffer_profile('version_1_0_4', 'version_2_0_0') \
+            if self.mellanox_buffer_migrator.mlnx_migrate_buffer_pool_size('version_1_0_5', 'version_2_0_0') \
+               and self.mellanox_buffer_migrator.mlnx_migrate_buffer_profile('version_1_0_5', 'version_2_0_0') \
                and self.migrate_config_db_buffer_tables_for_dynamic_calculation(speed_list, cable_len_list, '0', default_lossless_profiles,
                                                                                 abandon_method, append_method) \
                and self.mellanox_buffer_migrator.mlnx_flush_new_buffer_configuration() \
