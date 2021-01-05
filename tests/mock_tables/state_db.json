@@ -377,5 +377,8 @@
         "xon": "18432",
         "xoff": "32768",
         "size": "51200"
+    },
+    "BUFFER_MAX_PARAM_TABLE|global": {
+        "mmu_size": "13945824"
     }
 }
