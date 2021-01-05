@@ -26,12 +26,6 @@ class TestBuffer(object):
         os.environ['UTILITIES_UNIT_TESTING'] = "2"
         print("SETUP")
 
-    def setUp(self):
-        self.runner = CliRunner()
-        self.config_db = ConfigDBConnector()
-        self.config_db.connect()
-        self.obj = {'db': self.config_db}
-
     def test_config_buffer_profile_headroom(self):
         runner = CliRunner()
         db = Db()
@@ -41,7 +35,7 @@ class TestBuffer(object):
         print(result.output)
         assert result.exit_code == 0
         profile = db.cfgdb.get_entry('BUFFER_PROFILE', 'testprofile')
-        assert profile == {'dynamic_th': '3', 'pool': '[BUFFER_POOL|ingress_lossless_pool]', 'xon': '18432', 'xoff': '32768', 'size': '51200'}
+        assert profile == {'dynamic_th': '3', 'pool': '[BUFFER_POOL|ingress_lossless_pool]', 'xon': '18432', 'xoff': '32768', 'size': '18432'}
 
     def test_config_buffer_profile_dynamic_th(self):
         runner = CliRunner()
@@ -80,6 +74,109 @@ class TestBuffer(object):
         print(result.output)
         assert result.exit_code != 0
         assert "Can't change profile alpha_profile from dynamically calculating headroom to non-dynamically one" in result.output
+
+    def test_config_shp_size_negative(self):
+        runner = CliRunner()
+        result = runner.invoke(config.config.commands["buffer"].commands["shared-headroom-pool"].commands["size"],
+                               ["20000000"])
+        print(result.exit_code)
+        print(result.output)
+        assert result.exit_code != 0
+        assert "shared headroom pool must be less than mmu size" in result.output
+
+    def test_config_shp_ratio(self):
+        runner = CliRunner()
+        db = Db()
+        result = runner.invoke(config.config.commands["buffer"].commands["shared-headroom-pool"].commands["over-subscribe-ratio"],
+                               ["4"], obj=db)
+        print(result.exit_code)
+        print(result.output)
+        assert db.cfgdb.get_entry('DEFAULT_LOSSLESS_BUFFER_PARAMETER', 'AZURE') == {'default_dynamic_th': '0', 'over_subscribe_ratio': '4'}
+
+    def test_config_shp_ratio_negative(self):
+        runner = CliRunner()
+        db = Db()
+        port_number = len(db.cfgdb.get_table('PORT').keys())
+        bad_oversubscribe_ratio = str(port_number + 1)
+        result = runner.invoke(config.config.commands["buffer"].commands["shared-headroom-pool"].commands["over-subscribe-ratio"],
+                               [bad_oversubscribe_ratio], obj=db)
+        print(result.exit_code)
+        print(result.output)
+        assert result.exit_code != 0
+        assert "Invalid over-subscribe-ratio value {}. It should be in range [0, {}]".format(bad_oversubscribe_ratio, port_number) in result.output
+
+    def test_config_buffer_profile_headroom_toggle_shp(self):
+        runner = CliRunner()
+        db = Db()
+
+        # disable SHP by setting over-subscribe-ratio to 0
+        result = runner.invoke(config.config.commands["buffer"].commands["shared-headroom-pool"].commands["over-subscribe-ratio"],
+                               ["0"], obj=db)
+        print(result.exit_code)
+        print(result.output)
+        assert result.exit_code == 0
+        profile = db.cfgdb.get_entry('DEFAULT_LOSSLESS_BUFFER_PARAMETER', 'AZURE') == {'default_dynamic_th': '0', 'over_subscribe_ratio': '0'}
+
+        # size should equal xon + xoff
+        result = runner.invoke(config.config.commands["buffer"].commands["profile"].commands["add"],
+                               ["test1", "--dynamic_th", "3", "--xon", "18432", "--xoff", "32768"], obj=db)
+        print(result.exit_code)
+        print(result.output)
+        assert result.exit_code == 0
+        profile = db.cfgdb.get_entry('BUFFER_PROFILE', 'test1')
+        assert profile == {'dynamic_th': '3', 'pool': '[BUFFER_POOL|ingress_lossless_pool]', 'xon': '18432', 'xoff': '32768', 'size': '51200'}
+
+        # xoff should equal size - xon
+        result = runner.invoke(config.config.commands["buffer"].commands["profile"].commands["add"],
+                               ["test2", "--dynamic_th", "3", "--xon", "18432", "--size", "32768"], obj=db)
+        print(result.exit_code)
+        print(result.output)
+        assert result.exit_code == 0
+        profile = db.cfgdb.get_entry('BUFFER_PROFILE', 'test2')
+        assert profile == {'dynamic_th': '3', 'pool': '[BUFFER_POOL|ingress_lossless_pool]', 'xon': '18432', 'xoff': '14336', 'size': '32768'}
+
+        # set size
+        result = runner.invoke(config.config.commands["buffer"].commands["profile"].commands["set"],
+                               ["test2", "--dynamic_th", "3", "--size", "65536"], obj=db)
+        print(result.exit_code)
+        print(result.output)
+        assert result.exit_code == 0
+        profile = db.cfgdb.get_entry('BUFFER_PROFILE', 'test2')
+        assert profile == {'dynamic_th': '3', 'pool': '[BUFFER_POOL|ingress_lossless_pool]', 'xon': '18432', 'xoff': '14336', 'size': '65536'}
+
+        # set xon
+        result = runner.invoke(config.config.commands["buffer"].commands["profile"].commands["set"],
+                               ["test2", "--xon", "19456"], obj=db)
+        print(result.exit_code)
+        print(result.output)
+        assert result.exit_code == 0
+        profile = db.cfgdb.get_entry('BUFFER_PROFILE', 'test2')
+        assert profile == {'dynamic_th': '3', 'pool': '[BUFFER_POOL|ingress_lossless_pool]', 'xon': '19456', 'xoff': '14336', 'size': '65536'}
+
+        # set xoff
+        result = runner.invoke(config.config.commands["buffer"].commands["profile"].commands["set"],
+                               ["test2", "--xoff", "18432"], obj=db)
+        print(result.exit_code)
+        print(result.output)
+        assert result.exit_code == 0
+        profile = db.cfgdb.get_entry('BUFFER_PROFILE', 'test2')
+        assert profile == {'dynamic_th': '3', 'pool': '[BUFFER_POOL|ingress_lossless_pool]', 'xon': '19456', 'xoff': '18432', 'size': '65536'}
+
+        # enable SHP by setting size
+        result = runner.invoke(config.config.commands["buffer"].commands["shared-headroom-pool"].commands["size"],
+                               ["200000"], obj=db)
+        print(result.exit_code)
+        print(result.output)
+        assert db.cfgdb.get_entry('BUFFER_POOL', 'ingress_lossless_pool') == {'mode': 'dynamic', 'type': 'ingress', 'xoff': '200000'}
+
+        # size should equal xon
+        result = runner.invoke(config.config.commands["buffer"].commands["profile"].commands["add"],
+                               ["testprofile3", "--dynamic_th", "3", "--xon", "18432", "--xoff", "32768"], obj=db)
+        print(result.exit_code)
+        print(result.output)
+        assert result.exit_code == 0
+        profile = db.cfgdb.get_entry('BUFFER_PROFILE', 'testprofile3')
+        assert profile == {'dynamic_th': '3', 'pool': '[BUFFER_POOL|ingress_lossless_pool]', 'xon': '18432', 'xoff': '32768', 'size': '18432'}
 
     def test_show_buffer_configuration(self):
         self.executor(testData['show_buffer_configuration'])
