@@ -579,7 +579,6 @@ class MellanoxBufferMigrator():
         To migrate buffer pool configuration
         """
         self.is_buffer_config_default = False
-        buffer_pool_conf_in_db = {}
 
         # Buffer pools defined in old version
         default_buffer_pool_list_old = self.mlnx_default_buffer_parameters(old_version, "buffer_pool_list")
