@@ -3785,14 +3785,11 @@ def shared_headroom_pool(ctx):
 
 
 @shared_headroom_pool.command()
-@click.argument('ratio', metavar='<ratio>', required=True)
+@click.argument('ratio', metavar='<ratio>', type=int, required=True)
 @clicommon.pass_db
 def over_subscribe_ratio(db, ratio):
     """Configure over subscribe ratio"""
-    try:
-        ratio_in_number = int(ratio)
-    except ValueError as e:
-        ctx.fail("over-subscribe-ratio should be a number")
+    ratio_in_number = int(ratio)
 
     config_db = db.cfgdb
     ctx = click.get_current_context()
@@ -3818,14 +3815,11 @@ def over_subscribe_ratio(db, ratio):
 
 
 @shared_headroom_pool.command()
-@click.argument('size', metavar='<size>', required=True)
+@click.argument('size', metavar='<size>', type=int, required=True)
 @clicommon.pass_db
 def size(db, size):
     """Configure shared headroom pool size"""
-    try:
-        size_number = int(size)
-    except ValueError as e:
-        ctx.fail("size should be a number")
+    size_number = int(size)
 
     config_db = db.cfgdb
     state_db = db.db
