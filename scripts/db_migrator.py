@@ -224,19 +224,28 @@ class DBMigrator():
         cable_lengths = all_cable_lengths[list(all_cable_lengths.keys())[0]]
         for name, profile in buffer_pgs.items():
             # do the db migration
-            port, pg = name
-            if pg != '3-4':
-                continue
             try:
+                port, pg = name
                 profile_name = profile['profile'][1:-1].split('|')[1]
+                if pg == '0':
+                    if profile_name != 'ingress_lossy_profile':
+                        log.log_notice("BUFFER_PG table entry {} has non default profile {} configured".format(name, profile_name))
+                        abandon_method()
+                        return True
+                    else:
+                        continue
+                elif pg != '3-4':
+                    log.log_notice("BUFFER_PG table entry {} isn't default PG(0 or 3-4)".format(name))
+                    abandon_method()
+                    return True
                 m = re.search(profile_pattern, profile_name)
-            except Exception:
-                continue
-            if not m:
-                continue
-            speed = m.group(1)
-            cable_length = m.group(2)
-            try:
+                if not m:
+                    log.log_notice("BUFFER_PG table entry {} doesn't have the non-default profile name {}".format(name, profile_name))
+                    abandon_method()
+                    return True
+                speed = m.group(1)
+                cable_length = m.group(2)
+
                 if speed == ports[port]['speed'] and cable_length == cable_lengths[port]:
                     append_item_method(('BUFFER_PG', name, {'profile': 'NULL'}))
                 else:
@@ -245,7 +254,9 @@ class DBMigrator():
                     abandon_method()
                     return True
             except Exception:
-                continue
+                log.log_notice("Exception occured during parsing the profiles")
+                abandon_method()
+                return True
 
         # Insert other tables required for dynamic buffer calculation
         metadata = self.configDB.get_entry('DEVICE_METADATA', 'localhost')

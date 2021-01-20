@@ -79,7 +79,10 @@ class TestMellanoxBufferMigrator(object):
     @pytest.mark.parametrize('scenario',
                              ['empty-config',
                               'non-default-config',
-                              'non-default-xoff'
+                              'non-default-xoff',
+                              'non-default-lossless-profile-in-pg',
+                              'non-default-lossy-profile-in-pg',
+                              'non-default-pg'
                              ])
     def test_mellanox_buffer_migrator_negative_cold_reboot(self, scenario):
         db_before_migrate = scenario + '-input'
