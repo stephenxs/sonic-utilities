@@ -240,7 +240,7 @@ class DBMigrator():
                     return True
                 m = re.search(profile_pattern, profile_name)
                 if not m:
-                    log.log_notice("BUFFER_PG table entry {} doesn't have the non-default profile name {}".format(name, profile_name))
+                    log.log_notice("BUFFER_PG table entry {} has non-default profile name {}".format(name, profile_name))
                     abandon_method()
                     return True
                 speed = m.group(1)

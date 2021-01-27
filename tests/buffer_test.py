@@ -82,7 +82,7 @@ class TestBuffer(object):
         print(result.exit_code)
         print(result.output)
         assert result.exit_code != 0
-        assert "shared headroom pool must be less than mmu size" in result.output
+        assert "Shared headroom pool must be less than mmu size" in result.output
 
     def test_config_shp_ratio(self):
         runner = CliRunner()

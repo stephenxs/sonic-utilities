@@ -3789,13 +3789,11 @@ def shared_headroom_pool(ctx):
 @clicommon.pass_db
 def over_subscribe_ratio(db, ratio):
     """Configure over subscribe ratio"""
-    ratio_in_number = int(ratio)
-
     config_db = db.cfgdb
     ctx = click.get_current_context()
 
     port_number = len(config_db.get_table('PORT'))
-    if ratio_in_number < 0 or ratio_in_number > port_number:
+    if ratio < 0 or ratio > port_number:
         ctx.fail("Invalid over-subscribe-ratio value {}. It should be in range [0, {}]".format(ratio, port_number))
 
     default_lossless_param = config_db.get_table("DEFAULT_LOSSLESS_BUFFER_PARAMETER")
@@ -3819,22 +3817,20 @@ def over_subscribe_ratio(db, ratio):
 @clicommon.pass_db
 def size(db, size):
     """Configure shared headroom pool size"""
-    size_number = int(size)
-
     config_db = db.cfgdb
     state_db = db.db
     ctx = click.get_current_context()
 
-    _hash = '{}{}'.format('BUFFER_MAX_PARAM_TABLE|', 'global')
+    _hash = 'BUFFER_MAX_PARAM_TABLE|global'
     buffer_max_params = state_db.get_all(state_db.STATE_DB, _hash)
     if buffer_max_params:
         mmu_size = buffer_max_params.get('mmu_size')
-        if mmu_size and int(mmu_size) < size_number:
-            ctx.fail("shared headroom pool must be less than mmu size ({})".format(mmu_size))
+        if mmu_size and int(mmu_size) < size:
+            ctx.fail("Shared headroom pool must be less than mmu size ({})".format(mmu_size))
 
     ingress_lossless_pool = config_db.get_entry("BUFFER_POOL", "ingress_lossless_pool")
 
-    if size == '0':
+    if size == 0:
         if "xoff" in ingress_lossless_pool:
             ingress_lossless_pool.pop("xoff")
     else:
