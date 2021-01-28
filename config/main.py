@@ -3673,6 +3673,8 @@ def _is_shared_headroom_pool_enabled(ctx, config_db):
         return True
 
     default_lossless_param_table = config_db.get_table('DEFAULT_LOSSLESS_BUFFER_PARAMETER')
+    if not default_lossless_param_table:
+        ctx.fail("Dynamic buffer calculation is enabled while no entry found in DEFAULT_LOSSLESS_BUFFER_PARAMETER table")
     default_lossless_param = list(default_lossless_param_table.values())[0]
     over_subscribe_ratio = default_lossless_param.get('over_subscribe_ratio')
     if over_subscribe_ratio and over_subscribe_ratio != '0':
@@ -3728,7 +3730,7 @@ def update_profile(ctx, config_db, profile_name, xon, xoff, size, dynamic_th, po
             else:
                 xoff_number = int(size) - int(xon)
                 if xoff_number <= 0:
-                    ctx.fail("The xoff must be greater than 0")
+                    ctx.fail("The xoff must be greater than 0 while we got {} (calculated by: size {} - xon {})".format(xoff_number, size, xon))
                 params['xoff'] = str(xoff_number)
 
         if not size:
@@ -3745,7 +3747,7 @@ def update_profile(ctx, config_db, profile_name, xon, xoff, size, dynamic_th, po
             # and then get the default_dynamic_th from that entry (should be only one)
             keys = config_db.get_keys('DEFAULT_LOSSLESS_BUFFER_PARAMETER')
             if len(keys) != 1:
-                ctx.fail("Multiple or no entry in DEFAULT_LOSSLESS_BUFFER_PARAMETER found while no dynamic_th specified")
+                ctx.fail("Multiple entries are found in DEFAULT_LOSSLESS_BUFFER_PARAMETER while no dynamic_th specified")
 
             default_lossless_param = config_db.get_entry('DEFAULT_LOSSLESS_BUFFER_PARAMETER', keys[0])
             if 'default_dynamic_th' in default_lossless_param:
@@ -3803,7 +3805,7 @@ def over_subscribe_ratio(db, ratio):
             ctx.fail("More than one item in DEFAULT_LOSSLESS_BUFFER_PARAMETER table. Only the first one is updated")
         first_item = False
 
-        if ratio == "0":
+        if ratio == 0:
             if "over_subscribe_ratio" in v.keys():
                 v.pop("over_subscribe_ratio")
         else:
