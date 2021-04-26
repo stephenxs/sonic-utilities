@@ -1,6 +1,7 @@
 import json
 import os
 
+import subprocess
 import click
 import utilities_common.cli as clicommon
 import utilities_common.multi_asic as multi_asic_util
@@ -10,6 +11,7 @@ from sonic_py_common import multi_asic
 from sonic_py_common import device_info
 from swsssdk import ConfigDBConnector
 from portconfig import get_child_ports
+import sonic_platform_base.sonic_sfp.sfputilhelper
 
 from . import portchannel
 from collections import OrderedDict
@@ -371,6 +373,108 @@ def presence(db, interfacename, namespace, verbose):
         cmd += " -n {}".format(namespace)
 
     clicommon.run_command(cmd, display_cmd=verbose)
+
+
+@transceiver.command()
+@click.argument('interfacename', required=False)
+@click.option('--namespace', '-n', 'namespace', default=None, show_default=True,
+              type=click.Choice(multi_asic_util.multi_asic_ns_choices()), help='Namespace name or all')
+@click.option('--verbose', is_flag=True, help="Enable verbose output")
+@clicommon.pass_db
+def error_status(db, interfacename, namespace, verbose):
+    """ Show transceiver error-status """
+    def get_physical_port_name(logical_port, physical_port, ganged):
+        """
+            Returns:
+              port_num if physical
+              logical_port:port_num if logical port and is a ganged port
+              logical_port if logical and not ganged
+        """
+        if logical_port == physical_port:
+            return str(logical_port)
+        elif ganged:
+            return "{}:{} (ganged)".format(logical_port, physical_port)
+        else:
+            return logical_port
+
+    def logical_port_name_to_physical_port_list(port_name):
+        if port_name.startswith("Ethernet"):
+            if platform_sfputil.is_logical_port(port_name):
+                return platform_sfputil.get_logical_to_physical(port_name)
+            else:
+                click.echo("Error: Invalid port '{}'".format(port_name))
+                return None
+        else:
+            return [int(port_name)]
+    port = interfacename
+    logical_port_list = []
+    output_table = []
+    table_header = ["Port", "Error Status"]
+
+    platform_sfputil = sonic_platform_base.sonic_sfp.sfputilhelper.SfpUtilHelper()
+    port_config_file_path = device_info.get_path_to_port_config_file()
+    platform_sfputil.read_porttab_mappings(port_config_file_path, 0)
+
+    # Code to initialize chassis object
+    init_chassis_code = \
+        "import sonic_platform.platform;" \
+        "platform = sonic_platform.platform.Platform();" \
+        "chassis = platform.get_chassis();"
+
+    # Create a list containing the logical port names of all ports we're interested in
+    if port is None:
+        logical_port_list = platform_sfputil.logical
+
+        # Code to generate SFP object list
+        generate_sfp_list_code = \
+            "sfp_list = chassis.get_all_sfps();"
+    else:
+        if platform_sfputil.is_logical_port(port) == 0:
+            click.echo("Error: invalid port '{}'\n".format(port))
+            click.echo("Valid values for port: {}\n".format(str(platform_sfputil.logical)))
+            sys.exit(ERROR_INVALID_PORT)
+
+        physical_port_list = logical_port_name_to_physical_port_list(port)
+        logical_port_list = [port]
+
+        # Code to generate SFP object list
+        generate_sfp_list_code = \
+            "sfp_list = [chassis.get_sfp({})];".format(physical_port_list[0])
+
+    # Code to fetch the error status
+    get_error_status_code = \
+        "errors=['{}:{}'.format(sfp.index, sfp.get_error_description()) for sfp in sfp_list];" \
+        "print(errors)"
+
+    get_error_status_command = "docker exec pmon python3 -c \"{}{}{}\"".format(
+        init_chassis_code, generate_sfp_list_code, get_error_status_code)
+    # Fetch error status from pmon docker
+    try:
+        output = subprocess.check_output(get_error_status_command, shell=True, universal_newlines=True)
+    except subprocess.CalledProcessError as e:
+        click.abort("Error! Unable to fetch error status for SPF modules. Error code = {}, error messages: {}".format(e.returncode, e.output))
+
+    output_list = output.split('\n')
+    for output_str in output_list:
+        # The output of all SFP error status are a list consisting of element with convention of '<sfp no>:<error status>'
+        # Besides, there can be some logs captured during the platform API executing
+        # So, first of all, we need to skip all the logs until find the output list of SFP error status
+        if output_str[0] == '[' and output_str[-1] == ']':
+            output_list = eval(output_str)
+            break
+
+    output_dict = {}
+    for output in output_list:
+        sfp_index, error_status = output.split(':')
+        output_dict[int(sfp_index)] = error_status
+
+    for logical_port_name in logical_port_list:
+        physical_port_list = logical_port_name_to_physical_port_list(logical_port_name)
+        port_name = get_physical_port_name(logical_port_name, 1, False)
+
+        output_table.append([port_name, output_dict[physical_port_list[0]]])
+
+    click.echo(tabulate(output_table, table_header, tablefmt='simple'))
 
 
 #
