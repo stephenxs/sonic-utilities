@@ -377,7 +377,7 @@ def presence(db, interfacename, namespace, verbose):
 
 @transceiver.command()
 @click.argument('interfacename', required=False)
-@click.option('--fetch-from-hardware', '-h', 'fetch_from_hardware', is_flag=True, default=False)
+@click.option('--fetch-from-hardware', '-hw', 'fetch_from_hardware', is_flag=True, default=False)
 @click.option('--namespace', '-n', 'namespace', default=None, show_default=True,
               type=click.Choice(multi_asic_util.multi_asic_ns_choices()), help='Namespace name or all')
 @click.option('--verbose', is_flag=True, help="Enable verbose output")
@@ -394,11 +394,8 @@ def error_status(db, interfacename, fetch_from_hardware, namespace, verbose):
 
         cmd += " -p {}".format(interfacename)
 
-    if namespace is not None:
-        cmd += " -n {}".format(namespace)
-
     if fetch_from_hardware:
-        cmd += " -h"
+        cmd += " -hw"
 
     clicommon.run_command(cmd, display_cmd=verbose)
 

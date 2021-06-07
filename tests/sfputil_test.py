@@ -188,4 +188,4 @@ class TestSfputil(object):
 
         expected_output_ethernet0 = expected_output[:1]
         output = sfputil.fetch_error_status_from_state_db('Ethernet0', db.db)
-        assert output == expected_output_eth0
+        assert output == expected_output_ethernet0

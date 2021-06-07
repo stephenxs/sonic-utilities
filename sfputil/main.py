@@ -8,6 +8,7 @@
 import os
 import sys
 import natsort
+import ast
 
 import subprocess
 import click
@@ -263,7 +264,7 @@ def convert_sfp_info_to_output_string(sfp_info_dict):
                 output += '{}{}: {}\n'.format(indent, QSFP_DATA_MAP[key], sfp_info_dict[key])
             else:
                 output += '{}{}:\n'.format(indent, QSFP_DATA_MAP['specification_compliance'])
-                spefic_compliance_dict = eval(sfp_info_dict['specification_compliance'])
+                spefic_compliance_dict = ast.literal_eval(sfp_info_dict['specification_compliance'])
                 sorted_compliance_key_table = natsorted(spefic_compliance_dict)
                 for compliance_key in sorted_compliance_key_table:
                     output += '{}{}: {}\n'.format((indent * 2), compliance_key, spefic_compliance_dict[compliance_key])
@@ -628,8 +629,7 @@ def fetch_error_status_from_platform_api(port):
         A string consisting of the error status of each port.
     """
     if port is None:
-        logical_port_list = platform_sfputil.logical
-        physical_port_list = None
+        logical_port_list = natsort.natsorted(platform_sfputil.logical)
         # Create a list containing the logical port names of all ports we're interested in
         generate_sfp_list_code = \
             "sfp_list = chassis.get_all_sfps();"
@@ -716,11 +716,9 @@ def fetch_error_status_from_state_db(port, state_db):
 
 @show.command()
 @click.option('-p', '--port', metavar='<port_name>', help="Display SFP presence for port <port_name> only")
-@click.option('-h', '--fetch-from-hardware', 'fetch_from_hardware', is_flag=True, default=False, help="Fetch the error status from hardware directly")
-@click.option('-n', '--namespace', default=None, help="Display interfaces for specific namespace")
-def error_status(port, fetch_from_hardware, namespace):
+@click.option('-hw', '--fetch-from-hardware', 'fetch_from_hardware', is_flag=True, default=False, help="Fetch the error status from hardware directly")
+def error_status(port, fetch_from_hardware):
     """Display error status of SFP transceiver(s)"""
-    logical_port_list = []
     output_table = []
     table_header = ["Port", "Error Status"]
 
@@ -738,7 +736,8 @@ def error_status(port, fetch_from_hardware, namespace):
         if state_db is not None:
             state_db.connect(state_db.STATE_DB)
         else:
-            return None
+            click.echo("Failed to connect to STATE_DB")
+            return
 
         output_table = fetch_error_status_from_state_db(port, state_db)
 

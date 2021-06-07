@@ -869,7 +869,7 @@ This command displays information for all the interfaces for the transceiver req
 
 - Usage:
   ```
-  show interfaces transceiver (eeprom [-d|--dom] | lpmode | presence | error-status [-h|--fetch-from-hardware]) [<interface_name>]
+  show interfaces transceiver (eeprom [-d|--dom] | lpmode | presence | error-status [-hw|--fetch-from-hardware]) [<interface_name>]
   ```
 
 - Example (Decode and display information stored on the EEPROM of SFP transceiver connected to Ethernet0):
