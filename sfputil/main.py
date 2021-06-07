@@ -708,6 +708,7 @@ def fetch_error_status_from_state_db(port, state_db):
         elif statestring == '0':
             description = 'Unplugged'
         elif description == 'N/A':
+            log.log_error("Inconsistent state found for port {}: state is {} but error description is N/A".format(port, statestring)
             description = 'Unknown state: {}'.format(statestring)
 
         output.append([port, description])
@@ -715,7 +716,7 @@ def fetch_error_status_from_state_db(port, state_db):
     return output
 
 @show.command()
-@click.option('-p', '--port', metavar='<port_name>', help="Display SFP presence for port <port_name> only")
+@click.option('-p', '--port', metavar='<port_name>', help="Display SFP error status for port <port_name> only")
 @click.option('-hw', '--fetch-from-hardware', 'fetch_from_hardware', is_flag=True, default=False, help="Fetch the error status from hardware directly")
 def error_status(port, fetch_from_hardware):
     """Display error status of SFP transceiver(s)"""
