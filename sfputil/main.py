@@ -264,7 +264,7 @@ def convert_sfp_info_to_output_string(sfp_info_dict):
                 output += '{}{}: {}\n'.format(indent, QSFP_DATA_MAP[key], sfp_info_dict[key])
             else:
                 output += '{}{}:\n'.format(indent, QSFP_DATA_MAP['specification_compliance'])
-                spefic_compliance_dict = ast.literal_eval(sfp_info_dict['specification_compliance'])
+                spefic_compliance_dict = eval(sfp_info_dict['specification_compliance'])
                 sorted_compliance_key_table = natsorted(spefic_compliance_dict)
                 for compliance_key in sorted_compliance_key_table:
                     output += '{}{}: {}\n'.format((indent * 2), compliance_key, spefic_compliance_dict[compliance_key])
@@ -669,7 +669,7 @@ def fetch_error_status_from_platform_api(port):
         # Besides, there can be some logs captured during the platform API executing
         # So, first of all, we need to skip all the logs until find the output list of SFP error status
         if output_str[0] == '[' and output_str[-1] == ']':
-            output_list = eval(output_str)
+            output_list = ast.literal_eval(output_str)
             break
 
     output_dict = {}
