@@ -632,24 +632,27 @@ def fetch_error_status_from_platform_api(port):
         logical_port_list = natsort.natsorted(platform_sfputil.logical)
         # Create a list containing the logical port names of all ports we're interested in
         generate_sfp_list_code = \
-            "sfp_list = chassis.get_all_sfps();"
+            "sfp_list = chassis.get_all_sfps()\n"
     else:
         physical_port_list = logical_port_name_to_physical_port_list(port)
         logical_port_list = [port]
         # Create a list containing the logical port names of all ports we're interested in
         generate_sfp_list_code = \
-            "sfp_list = [chassis.get_sfp(x) for x in {}];".format(physical_port_list)
+            "sfp_list = [chassis.get_sfp(x) for x in {}]\n".format(physical_port_list)
 
     # Code to initialize chassis object
     init_chassis_code = \
-        "import sonic_platform.platform;" \
-        "platform = sonic_platform.platform.Platform();" \
-        "chassis = platform.get_chassis();"
+        "import sonic_platform.platform\n" \
+        "platform = sonic_platform.platform.Platform()\n" \
+        "chassis = platform.get_chassis()\n"
 
     # Code to fetch the error status
     get_error_status_code = \
-        "errors=['{}:{}'.format(sfp.index, sfp.get_error_description()) for sfp in sfp_list];" \
-        "print(errors)"
+        "try:\n"\
+        "    errors=['{}:{}'.format(sfp.index, sfp.get_error_description()) for sfp in sfp_list]\n" \
+        "except NotImplementedError as e:\n"\
+        "    errors=['{}:{}'.format(sfp.index, 'OK (Not implemented)') for sfp in sfp_list]\n" \
+        "print(errors)\n"
 
     get_error_status_command = "docker exec pmon python3 -c \"{}{}{}\"".format(
         init_chassis_code, generate_sfp_list_code, get_error_status_code)
@@ -657,7 +660,8 @@ def fetch_error_status_from_platform_api(port):
     try:
         output = subprocess.check_output(get_error_status_command, shell=True, universal_newlines=True)
     except subprocess.CalledProcessError as e:
-        click.abort("Error! Unable to fetch error status for SPF modules. Error code = {}, error messages: {}".format(e.returncode, e.output))
+        click.Abort("Error! Unable to fetch error status for SPF modules. Error code = {}, error messages: {}".format(e.returncode, e.output))
+        return None
 
     output_list = output.split('\n')
     for output_str in output_list:
