@@ -708,7 +708,7 @@ def fetch_error_status_from_state_db(port, state_db):
         elif statestring == '0':
             description = 'Unplugged'
         elif description == 'N/A':
-            log.log_error("Inconsistent state found for port {}: state is {} but error description is N/A".format(port, statestring)
+            log.log_error("Inconsistent state found for port {}: state is {} but error description is N/A".format(port, statestring))
             description = 'Unknown state: {}'.format(statestring)
 
         output.append([port, description])
