@@ -2326,6 +2326,7 @@ def reload(ctx, no_dynamic_buffer, dry_run, json_data):
 @qos.command('update')
 @click.pass_context
 @click.option('--ports', is_flag=False, required=True, help="List of ports that needs to be updated")
+@click.option('--force', is_flag=True, help="Force remove existing configuration")
 @click.option(
     '--json-data', type=click.STRING,
     help="json string with additional data, valid with --dry-run option"
@@ -2334,7 +2335,7 @@ def reload(ctx, no_dynamic_buffer, dry_run, json_data):
     '--dry_run', is_flag=True,
     help="Dry run, writes config to the given file"
 )
-def update(ctx, ports, dry_run, json_data):
+def update(ctx, ports, force, dry_run, json_data):
     """Reload QoS configuration"""
     log.log_info("'qos reload' executing...")
 
@@ -2349,20 +2350,25 @@ def update(ctx, ports, dry_run, json_data):
     if multi_asic.get_num_asics() > 1:
         namespace_list = multi_asic.get_namespaces_from_linux()
 
+    # Tables whose key is port only
     tables_single_index = [
         'PORT_QOS_MAP',
-        'QUEUE',
-        'BUFFER_PG',
-        'BUFFER_QUEUE',
         'BUFFER_PORT_INGRESS_PROFILE_LIST',
         'BUFFER_PORT_EGRESS_PROFILE_LIST']
+    # Tables whose key is port followed by other element
+    tables_multi_index = [
+        'QUEUE',
+        'BUFFER_PG',
+        'BUFFER_QUEUE']
 
     if json_data:
         from_db = "--additional-data \'{}\'".format(json_data) if json_data else ""
     else:
         from_db = "-d"
 
-    dry_run_result = []
+    items_to_update = {}
+    config_dbs = {}
+
     for ns in namespace_list:
         if ns is DEFAULT_NAMESPACE:
             asic_id_suffix = ""
@@ -2377,6 +2383,7 @@ def update(ctx, ports, dry_run, json_data):
             config_db = ConfigDBConnector(use_unix_socket_path=True, namespace=ns)
 
         config_db.connect()
+        config_dbs[ns] = config_db
         if is_dynamic_buffer_enabled(config_db):
             buffer_template_file = os.path.join(hwsku_path, asic_id_suffix, "buffers_dynamic.json.j2")
         else:
@@ -2385,13 +2392,12 @@ def update(ctx, ports, dry_run, json_data):
         if not os.path.isfile(buffer_template_file):
             click.secho("Buffer definition template not found at {}".format(buffer_template_file), fg="yellow")
             ctx.abort()
-            raise click.Abort()
 
         qos_template_file = os.path.join(hwsku_path, asic_id_suffix, "qos.json.j2")
 
         if not os.path.isfile(qos_template_file):
             click.secho("QoS definition template not found at {}".format(qos_template_file), fg="yellow")
-            raise click.Abort()
+            ctx.abort()
 
         cmd_ns = "" if ns is DEFAULT_NAMESPACE else "-n {}".format(ns)
         command = "{} {} {} -t {},config-db -t {},config-db -y {} --print-data".format(
@@ -2410,19 +2416,49 @@ def update(ctx, ports, dry_run, json_data):
 
         portset_handled.update(ports_to_update)
 
-        port_qos_items = {}
-        # Handle all tables
+        items_to_apply = {}
+        items_to_remove = {}
+        ports_with_configure = set()
+
         for table_name in tables_single_index:
-            table_items = jsondict.get(table_name)
-            if table_items:
-                for key, data in table_items.items():
+            table_items_existing = set(config_db.get_keys(table_name))
+            table_items_rendered = jsondict.get(table_name)
+            if table_items_rendered:
+                for key, data in table_items_rendered.items():
+                    port = key
+                    if not port in ports_to_update:
+                        continue
+                    # If there is an entry existing, add it to items_to_remove
+                    if port in table_items_existing:
+                        if not items_to_remove.get(table_name):
+                            items_to_remove[table_name] = set()
+                        items_to_remove[table_name].add(port)
+                        ports_with_configure.add(port)
+                    # Push the rendered data to config-db
+                    if not items_to_apply.get(table_name):
+                        items_to_apply[table_name] = {}
+                    items_to_apply[table_name][key] = data
+
+        for table_name in tables_multi_index:
+            table_items_existing = set(config_db.get_keys(table_name))
+            if table_items_existing:
+                for port, ids in table_items_existing:
+                    if port in ports_to_update:
+                        if not items_to_remove.get(table_name):
+                            items_to_remove[table_name] = set()
+                        items_to_remove[table_name].add(port + '|' + ids)
+                        ports_with_configure.add(port)
+
+            table_items_rendered = jsondict.get(table_name)
+            if table_items_rendered:
+                for key, data in table_items_rendered.items():
                     port = key.split('|')[0]
                     if not port in ports_to_update:
                         continue
                     # Push the result to config-db
-                    if not port_qos_items.get(table_name):
-                        port_qos_items[table_name] = {}
-                    port_qos_items[table_name][key] = data
+                    if not items_to_apply.get(table_name):
+                        items_to_apply[table_name] = {}
+                    items_to_apply[table_name][key] = data
 
         # Handle CABLE_LENGTH
         # This table needs to be specially handled because the port is not the index but the field name
@@ -2435,38 +2471,61 @@ def update(ctx, ports, dry_run, json_data):
         cable_length_table = jsondict.get(table_name)
         if cable_length_table:
             for key, item in cable_length_table.items():
+                cable_length_from_db = config_db.get_entry(table_name, key)
                 cable_length_from_template = {}
                 for port in ports_to_update:
                     cable_len = item.get(port)
                     if cable_len:
                         cable_length_from_template[port] = cable_len
+                        if port in cable_length_from_db:
+                            ports_with_configure.add(port)
+                            items_to_remove[table_name].add(key)
                 # Reaching this point,
                 # - cable_length_from_template contains cable length rendered from the template, eg Ethernet0 and Ethernet4 in the above example
                 # - cable_length_from_db contains cable length existing in the CONFIG_DB, eg Ethernet8, Ethernet12, and Ethernet16 in the above exmaple
-                cable_length_from_db = config_db.get_entry(table_name, key)
 
-                if not port_qos_items.get(table_name):
-                    port_qos_items[table_name] = {}
+                if not items_to_apply.get(table_name):
+                    items_to_apply[table_name] = {}
 
                 if cable_length_from_db:
                     cable_length_from_db.update(cable_length_from_template)
-                    port_qos_items[table_name][key] = cable_length_from_db
+                    items_to_apply[table_name][key] = cable_length_from_db
                 else:
-                    port_qos_items[table_name][key] = cable_length_from_template
+                    items_to_apply[table_name][key] = cable_length_from_template
 
-        if port_qos_items:
-            if dry_run:
-                dry_run_result.append(port_qos_items)
-            else:
-                jsonstr = json.dumps(port_qos_items)
-                command = "{} {} --additional-data '{}' --write-to-db".format(SONIC_CFGGEN_PATH, cmd_ns, jsonstr)
-                clicommon.run_command(command, display_cmd=False)
+        if ports_with_configure and not force:
+            click.echo('Buffer or QoS configuration already exist on ports {} in tables {}, use "--force" to force update'.format(
+                ports_with_configure, list(items_to_remove.keys())))
+            ctx.abort()
 
-                if portset_to_handle != portset_handled:
-                    click.echo("The port(s) {} are not updated because they do not exist".format(portset_to_handle - portset_handled))
+        if items_to_apply:
+            items_to_update[ns] = {}
+            items_to_update[ns]['remove'] = items_to_remove
+            items_to_update[ns]['apply'] = items_to_apply
 
     if dry_run:
-        print(json.dumps(dry_run_result, sort_keys=True, indent=4))
+        print(json.dumps({k:v['apply'] for k,v in items_to_update.items()},
+                         sort_keys=True,
+                         indent=4))
+    else:
+        for ns, items in items_to_update.items():
+            items_to_remove = items.get('remove')
+            if items_to_remove:
+                config_db = config_dbs[ns]
+                for table, entries in items_to_remove.items():
+                    if table in tables_single_index:
+                        # Tables with single index can be overwritten without removing
+                        continue
+                    for key, _ in entries.items():
+                        config_db.set_entry(table, '|'.join(key), None)
+            items_to_apply = items.get('apply')
+            jsonstr = json.dumps(items_to_apply)
+            cmd_ns = "" if ns is DEFAULT_NAMESPACE else "-n {}".format(ns)
+            command = "{} {} --additional-data '{}' --write-to-db".format(SONIC_CFGGEN_PATH, cmd_ns, jsonstr)
+            clicommon.run_command(command, display_cmd=False)
+
+            if portset_to_handle != portset_handled:
+                click.echo("The port(s) {} are not updated because they do not exist".format(portset_to_handle - portset_handled))
 
 def is_dynamic_buffer_enabled(config_db):
     """Return whether the current system supports dynamic buffer calculation"""

@@ -446,16 +446,23 @@ class TestConfigQos(object):
             self, get_cmd_module, setup_qos_mock_apis
         ):
         (config, show) = get_cmd_module
-        runner = CliRunner()
         json_data = '{"DEVICE_METADATA": {"localhost": {}}, "PORT": {"Ethernet0": {}}}'
-        result = runner.invoke(
-            config.config.commands["qos"],
-            ["update", "--ports", "Ethernet0", "--json-data", json_data, "--dry_run"]
-        )
+        runner = CliRunner()
+
+        cmd_vector = ["update", "--ports", "Ethernet0", "--json-data", json_data, "--dry_run"]
+        result = runner.invoke(config.config.commands["qos"], cmd_vector)
+        print(result.exit_code)
+        print(result.output)
+        assert "Buffer or QoS configuration already exist on ports {'Ethernet0'} in tables ['PORT_QOS_MAP', 'QUEUE', 'BUFFER_PG', 'BUFFER_QUEUE']" in result.output
+        assert result.exit_code != 0
+
+        # Parse result.output
+
+        cmd_vector = ["update", "--ports", "Ethernet0", "--json-data", json_data, "--dry_run", "--force"]
+        result = runner.invoke(config.config.commands["qos"], cmd_vector)
         print(result.exit_code)
         print(result.output)
         assert result.exit_code == 0
-
         cwd = os.path.dirname(os.path.realpath(__file__))
         expected_result = os.path.join(
             cwd, "qos_config_input", "update_qos.json"
@@ -465,7 +472,7 @@ class TestConfigQos(object):
 
         result_json = json.loads(result.output)
 
-        assert expected_json == result_json
+        assert expected_json == result_json['']
 
     @classmethod
     def teardown_class(cls):
@@ -539,7 +546,7 @@ class TestConfigQosMasic(object):
         json_data = '{"DEVICE_METADATA": {"localhost": {}}, "PORT": {"Ethernet0": {}}}'
         result = runner.invoke(
             config.config.commands["qos"],
-            ["update", "--ports", "Ethernet0,Ethernet4", "--json-data", json_data, "--dry_run"]
+            ["update", "--ports", "Ethernet0,Ethernet4", "--json-data", json_data, "--dry_run", "--force"]
         )
         print(result.exit_code)
         print(result.output)
@@ -557,7 +564,7 @@ class TestConfigQosMasic(object):
             with open(expected_result) as expected_fp:
                 expected_json = json.load(expected_fp)
 
-            assert expected_json == result_json[asic]
+            assert expected_json == result_json['asic' + str(asic)]
 
     @classmethod
     def teardown_class(cls):

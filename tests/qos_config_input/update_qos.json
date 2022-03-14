@@ -1,4 +1,4 @@
-[{
+{
     "BUFFER_PG": {
         "Ethernet0|0": {
             "profile": "ingress_lossy_profile"
@@ -54,4 +54,4 @@
             "scheduler": "scheduler.0"
         }
     }
-}]
+}
