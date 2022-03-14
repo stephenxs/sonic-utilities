@@ -2342,7 +2342,8 @@ def update(ctx, ports, dry_run, json_data):
     sonic_version_file = device_info.get_sonic_version_file()
 
     portlist = ports.split(',')
-    portset = set(portlist)
+    portset_to_handle = set(portlist)
+    portset_handled = set()
 
     namespace_list = [DEFAULT_NAMESPACE]
     if multi_asic.get_num_asics() > 1:
@@ -2401,18 +2402,19 @@ def update(ctx, ports, dry_run, json_data):
         jsondict = json.loads(jsonstr)
         port_table = jsondict.get('PORT')
         if port_table:
-            ports_to_update = set(port_table.keys()).intersection(portset)
+            ports_to_update = set(port_table.keys()).intersection(portset_to_handle)
             if not ports_to_update:
                 continue
         else:
             continue
+
+        portset_handled.update(ports_to_update)
 
         port_qos_items = {}
         # Handle all tables
         for table_name in tables_single_index:
             table_items = jsondict.get(table_name)
             if table_items:
-                result = {}
                 for key, data in table_items.items():
                     port = key.split('|')[0]
                     if not port in ports_to_update:
@@ -2424,7 +2426,11 @@ def update(ctx, ports, dry_run, json_data):
 
         # Handle CABLE_LENGTH
         # This table needs to be specially handled because the port is not the index but the field name
-        # The idea is for all the items that are in the config_db or template
+        # The idea is for all the entries in template, the same entries in CONFIG_DB will be merged together
+        # Eg. there is entry AZURE rendered from template for ports Ethernet0, Ethernet4 with cable length "5m":
+        # and entry AZURE in CONFIG_DB for ports Ethernet8, Ethernet12, Ethernet16 with cable length "40m"
+        # The entry that will eventually be pushed into CONFIG_DB is
+        # {"AZURE": {"Ethernet0": "5m", "Ethernet4": "5m", "Ethernet8": "40m", "Ethernet12": "40m", "Ethernet16": "40m"}}
         table_name = 'CABLE_LENGTH'
         cable_length_table = jsondict.get(table_name)
         if cable_length_table:
@@ -2434,6 +2440,9 @@ def update(ctx, ports, dry_run, json_data):
                     cable_len = item.get(port)
                     if cable_len:
                         cable_length_from_template[port] = cable_len
+                # Reaching this point,
+                # - cable_length_from_template contains cable length rendered from the template, eg Ethernet0 and Ethernet4 in the above example
+                # - cable_length_from_db contains cable length existing in the CONFIG_DB, eg Ethernet8, Ethernet12, and Ethernet16 in the above exmaple
                 cable_length_from_db = config_db.get_entry(table_name, key)
 
                 if not port_qos_items.get(table_name):
@@ -2450,9 +2459,11 @@ def update(ctx, ports, dry_run, json_data):
                 dry_run_result.append(port_qos_items)
             else:
                 jsonstr = json.dumps(port_qos_items)
-                db_operation = '--print-data' if dry_run else '--write-to-db'
                 command = "{} {} --additional-data '{}' --write-to-db".format(SONIC_CFGGEN_PATH, cmd_ns, jsonstr)
                 clicommon.run_command(command, display_cmd=False)
+
+                if portset_to_handle != portset_handled:
+                    click.echo("The port(s) {} are not updated because they do not exist".format(portset_to_handle - portset_handled))
 
     if dry_run:
         print(json.dumps(dry_run_result, sort_keys=True, indent=4))
