@@ -685,9 +685,11 @@
     "PORT_TABLE|Ethernet0": {
         "rmt_adv_speeds" : "10,100,1000",
         "speed" : "100000",
-        "supported_speeds": "10000,25000,40000,100000"
+        "supported_speeds": "10000,25000,40000,100000",
+        "supported_fecs": "rs,none,test"
     },
     "PORT_TABLE|Ethernet112": {
+        "supported_fecs": "N/A",
         "speed": "40000"
     },
     "PCIE_DEVICE|00:01.0": {
