@@ -448,17 +448,8 @@ class TestConfigQos(object):
         (config, show) = get_cmd_module
         json_data = '{"DEVICE_METADATA": {"localhost": {}}, "PORT": {"Ethernet0": {}}}'
         runner = CliRunner()
-
-        cmd_vector = ["update", "--ports", "Ethernet0", "--json-data", json_data, "--dry_run"]
-        result = runner.invoke(config.config.commands["qos"], cmd_vector)
-        print(result.exit_code)
-        print(result.output)
-        assert "Buffer or QoS configuration already exist on ports {'Ethernet0'} in tables ['PORT_QOS_MAP', 'QUEUE', 'BUFFER_PG', 'BUFFER_QUEUE']" in result.output
-        assert result.exit_code != 0
-
-        # Parse result.output
-
-        cmd_vector = ["update", "--ports", "Ethernet0", "--json-data", json_data, "--dry_run", "--force"]
+        output_file = os.path.join(os.sep, "tmp", "qos_config_update.json")
+        cmd_vector = ["reload", "--ports", "Ethernet0", "--json-data", json_data, "--dry_run", output_file]
         result = runner.invoke(config.config.commands["qos"], cmd_vector)
         print(result.exit_code)
         print(result.output)
@@ -467,12 +458,7 @@ class TestConfigQos(object):
         expected_result = os.path.join(
             cwd, "qos_config_input", "update_qos.json"
         )
-        with open(expected_result) as expected_fp:
-            expected_json = json.load(expected_fp)
-
-        result_json = json.loads(result.output)
-
-        assert expected_json == result_json['']
+        assert filecmp.cmp(output_file, expected_result, shallow=False)
 
     @classmethod
     def teardown_class(cls):
@@ -534,7 +520,7 @@ class TestConfigQosMasic(object):
         (config, show) = get_cmd_module
         runner = CliRunner()
 
-        output_file = os.path.join(os.sep, "tmp", "qos_config_output.json")
+        output_file = os.path.join(os.sep, "tmp", "qos_update_output")
         print("Saving output in {}<0,1,2..>".format(output_file))
         num_asic = device_info.get_num_npus()
         for asic in range(num_asic):
@@ -546,7 +532,7 @@ class TestConfigQosMasic(object):
         json_data = '{"DEVICE_METADATA": {"localhost": {}}, "PORT": {"Ethernet0": {}}}'
         result = runner.invoke(
             config.config.commands["qos"],
-            ["update", "--ports", "Ethernet0,Ethernet4", "--json-data", json_data, "--dry_run", "--force"]
+            ["reload", "--ports", "Ethernet0,Ethernet4", "--json-data", json_data, "--dry_run", output_file]
         )
         print(result.exit_code)
         print(result.output)
@@ -554,17 +540,12 @@ class TestConfigQosMasic(object):
 
         cwd = os.path.dirname(os.path.realpath(__file__))
 
-        result_json = json.loads(result.output)
-
         for asic in range(num_asic):
             expected_result = os.path.join(
                 cwd, "qos_config_input", str(asic), "update_qos.json"
             )
 
-            with open(expected_result) as expected_fp:
-                expected_json = json.load(expected_fp)
-
-            assert expected_json == result_json['asic' + str(asic)]
+            assert filecmp.cmp(output_file + "asic{}".format(asic), expected_result, shallow=False)
 
     @classmethod
     def teardown_class(cls):

@@ -7491,7 +7491,7 @@ Some of the example QOS configurations that users can modify are given below.
   When there are no changes in the platform specific configutation files, they internally use the file "/usr/share/sonic/templates/buffers_config.j2" and "/usr/share/sonic/templates/qos_config.j2" to generate the configuration.
   ```
 
-**config qos update**
+**config qos reload --ports port_list**
 
 This command is used to reload the default QoS configuration on a group of ports.
 Typically, the default QoS configuration is in the following tables.
@@ -7510,20 +7510,15 @@ If there was QoS configuration in the above tables for the ports:
 
 - Usage:
   ```
-  config qos update --ports <port>[,port] [--force]
+  config qos reload --ports <port>[,port]
   ```
 
 - Example:
   ```
-  admin@sonic:~$ sudo config qos update --ports Ethernet0,Ethernet4
+  admin@sonic:~$ sudo config qos reload --ports Ethernet0,Ethernet4
 
   In this example, it updates the QoS configuration on port Ethernet0 and Ethernet4 to default.
-  If there was QoS configuration on the ports, the command will list all the tables containing QoS configuration and exit. The output can be like this:
-  Buffer or QoS configuration already exist on ports Ethernet0,Ethernet4 in tables ['BUFFER_PG', 'BUFFER_QUEUE'], use "--force" to force update
-
-  admin@sonic:~$ sudo config qos update --ports Ethernet0,Ethernet4 --force
-
-  In this example, it updates the QoS configuration on port Ethernet0 and Ethernet4 to default even there was QoS configuration on the ports.
+  If there was QoS configuration on the ports, the command will clear the existing QoS configuration on the port and reload to default.
   ```
 
 Go Back To [Beginning of the document](#) or [Beginning of this section](#qos)
