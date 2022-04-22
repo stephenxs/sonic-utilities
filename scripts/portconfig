@@ -127,7 +127,7 @@ class portconfig(object):
         supported_fecs = self.get_supported_fecs(port)
         if fec not in supported_fecs:
             if supported_fecs:
-                print('fec not in {}'.format(supported_fecs))
+                print('fec {} is not in {}'.format(fec, supported_fecs))
             else:
                 print('Setting fec is not supported on port {}'.format(port))
             exit(1)
