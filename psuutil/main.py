@@ -102,6 +102,16 @@ def status(index):
         if psu.get_presence():
             try:
                 status = 'OK' if psu.get_powergood_status() else 'NOT OK'
+                if psu.get_powergood_status():
+                    power = psu.get_power()
+                    try:
+                        power_critical_threshold = psu.get_psu_power_critical_threshold()
+                    except NotImplementedError:
+                        power_critical_threshold = None
+                    if power_critical_threshold != None and power > power_critical_threshold:
+                        status = 'WARNING'
+                    else:
+                        status = 'OK'
             except NotImplementedError:
                 status = 'UNKNOWN'
 
