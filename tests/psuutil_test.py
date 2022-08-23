@@ -1,5 +1,6 @@
 import sys
 import os
+from sonic_platform_base import device_base
 from unittest import mock
 
 import pytest
@@ -11,10 +12,6 @@ sys.path.insert(0, modules_path)
 
 sys.modules['sonic_platform'] = mock.MagicMock()
 import psuutil.main as psuutil
-
-if 'sonic_platform_base' in sys.modules:
-    sys.modules.pop('sonic_platform_base')
-from sonic_platform_base import device_base
 
 STATUS_OUTPUT = '''\
 PSU    Model        Serial    HW Rev      Voltage (V)    Current (A)    Power (W)    Power Warn Thres (W)    Power Crit Thres (W)  Status    LED
@@ -44,7 +41,7 @@ class TestPsuutil(object):
         psu.get_voltage = mock.MagicMock(return_value=12.0)
         psu.get_current = mock.MagicMock(return_value=10.0)
         psu.get_power = mock.MagicMock(return_value=120.0)
-        psu.get_status_led = mock.MagicMock(return_value=device_base.DeviceBase.STATUS_LED_COLOR_GREEN)
+        psu.get_status_led = mock.MagicMock(return_value='green')
 
         psu_list = [psu]
         platform_chassis.get_all_psus = mock.MagicMock(return_value=psu_list)
