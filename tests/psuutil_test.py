@@ -1,6 +1,5 @@
 import sys
 import os
-from sonic_platform_base import device_base
 from unittest import mock
 
 import pytest
@@ -12,6 +11,10 @@ sys.path.insert(0, modules_path)
 
 sys.modules['sonic_platform'] = mock.MagicMock()
 import psuutil.main as psuutil
+
+if 'sonic_platform_base' in sys.modules:
+    sys.modules.pop('sonic_platform_base')
+from sonic_platform_base import device_base
 
 STATUS_OUTPUT = '''\
 PSU    Model        Serial    HW Rev      Voltage (V)    Current (A)    Power (W)    Power Warn Thres (W)    Power Crit Thres (W)  Status    LED
