@@ -112,9 +112,9 @@ def status(index):
                         power_threshold = psu.get_psu_power_threshold()
                     except NotImplementedError:
                         pass
-                    if power_critical_threshold == None:
+                    if power_critical_threshold is None:
                         power_critical_threshold = 'N/A'
-                    if power_threshold == None:
+                    if power_threshold is None:
                         power_threshold = 'N/A'
                     status = 'OK'
             except NotImplementedError:
