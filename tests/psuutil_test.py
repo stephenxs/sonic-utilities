@@ -19,6 +19,12 @@ PSU    Model        Serial    HW Rev      Voltage (V)    Current (A)    Power (W
 PSU 1  SampleModel  S001      Rev A             12.00          10.00       120.00                   90.00                  100.00  OK        green
 '''
 
+STATUS_OUTPUT_NOT_IMPLEMENT = '''\
+PSU    Model        Serial    HW Rev      Voltage (V)    Current (A)    Power (W)  Power Warn Thres (W)    Power Crit Thres (W)    Status    LED
+-----  -----------  --------  --------  -------------  -------------  -----------  ----------------------  ----------------------  --------  -----
+PSU 1  SampleModel  S001      N/A               12.00          10.00       120.00  N/A                     N/A                     OK        green
+'''
+
 class TestPsuutil(object):
 
     def test_version(self):
@@ -49,3 +55,9 @@ class TestPsuutil(object):
         runner = CliRunner()
         result = runner.invoke(psuutil.cli.commands['status'])
         assert result.output == STATUS_OUTPUT
+
+        psu.get_psu_power_critical_threshold = mock.MagicMock(side_effect=NotImplementedError(''))
+        psu.get_revision = mock.MagicMock(side_effect=NotImplementedError(''))
+        runner = CliRunner()
+        result = runner.invoke(psuutil.cli.commands['status'])
+        assert result.output == STATUS_OUTPUT_NOT_IMPLEMENT
