@@ -109,7 +109,7 @@ def status(index):
                     power = psu.get_power()
                     try:
                         power_critical_threshold = psu.get_psu_power_critical_threshold()
-                        power_threshold = psu.get_psu_power_threshold()
+                        power_threshold = psu.get_psu_power_warning_threshold()
                     except NotImplementedError:
                         pass
                     if power_critical_threshold is None:
