@@ -1591,6 +1591,7 @@ def download_firmware(port_name, filepath):
                                                                1 = Hitless Reset to Inactive Image (Default)\n \
                                                                2 = Attempt non-hitless Reset to Running Image\n \
                                                                3 = Attempt Hitless Reset to Running Image\n")
+@click.option('--delay', metavar='<delay>', type=click.IntRange(0, 10), help="Delay time before updating firmware information to STATE_DB")
 def run(port_name, mode):
     """Run the firmware with default mode=0"""
 
@@ -1606,6 +1607,9 @@ def run(port_name, mode):
     if status != 1:
         click.echo('Failed to run firmware in mode={}! CDB status: {}'.format(mode, status))
         sys.exit(EXIT_FAIL)
+
+    if delay:
+        time.sleep(delay)
 
     update_firmware_info_to_state_db(port_name)
     click.echo("Firmware run in mode={} success".format(mode))
