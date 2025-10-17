@@ -1,24 +1,30 @@
 #!/usr/bin/python
 from __future__ import print_function
 import sys
-from swsscommon.swsscommon import SonicDBConfig
+from swsscommon.swsscommon import SonicDBConfig, SonicDBKey
 import redis
 import argparse
+import os
+
+NETNS = os.environ.get("NETNS", "")
 
 def centralize_to_target_db(target_dbname):
-    target_dbport = SonicDBConfig.getDbPort(target_dbname)
-    target_dbhost = SonicDBConfig.getDbHostname(target_dbname)
+    SonicDBConfig.initializeGlobalConfig()
+    key = SonicDBKey()
+    key.netns = NETNS
+    target_dbport = SonicDBConfig.getDbPort(target_dbname, key)
+    target_dbhost = SonicDBConfig.getDbHostname(target_dbname, key)
 
-    dblists = SonicDBConfig.getDbList()
+    dblists = SonicDBConfig.getDbList(key)
     for dbname in dblists:
-        dbport = SonicDBConfig.getDbPort(dbname)
-        dbhost = SonicDBConfig.getDbHostname(dbname)
+        dbport = SonicDBConfig.getDbPort(dbname, key)
+        dbhost = SonicDBConfig.getDbHostname(dbname, key)
         # if the db is on the same instance, no need to move
         if dbport == target_dbport and dbhost == target_dbhost:
             continue
 
-        dbsocket = SonicDBConfig.getDbSock(dbname)
-        dbid = SonicDBConfig.getDbId(dbname)
+        dbsocket = SonicDBConfig.getDbSock(dbname, key)
+        dbid = SonicDBConfig.getDbId(dbname, key)
 
         r = redis.Redis(host=dbhost, unix_socket_path=dbsocket, db=dbid)
 
