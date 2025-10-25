@@ -12,12 +12,13 @@ import subprocess  # noqa: E402
 import syslog  # noqa: E402
 import time  # noqa: E402
 import traceback  # noqa: E402
-from swsscommon.swsscommon import ConfigDBConnector  # noqa: E402
+from swsscommon.swsscommon import ConfigDBConnector, SonicDBConfig  # noqa: E402
 
 SYSLOG_ID = 'lag_keepalive'
 SLOW_PROTOCOL_MAC_ADDRESS = "01:80:c2:00:00:02"
 LACP_ETHERTYPE = 0x8809
 
+NETNS = os.environ.get("NETNS", "")
 
 def log_info(msg):
     syslog.openlog(SYSLOG_ID)
@@ -66,7 +67,7 @@ def craft_lacp_packet(portChannelConfig, portName):
 
 
 def get_lacpdu_per_lag_member():
-    appDB = ConfigDBConnector()
+    appDB = ConfigDBConnector(namespace=NETNS)
     appDB.db_connect('APPL_DB')
     appDB_lag_info = appDB.get_keys('LAG_MEMBER_TABLE')
     active_lag_members = list()
@@ -109,6 +110,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--fork-into-background', action='store_true')
     args = parser.parse_args()
+
+    SonicDBConfig.initializeGlobalConfig()
 
     while True:
         try:
