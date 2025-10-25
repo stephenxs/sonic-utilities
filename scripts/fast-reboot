@@ -56,6 +56,7 @@ EXIT_LEFTOVER_CPA_TUNNEL=30
 
 [ -f /usr/share/sonic/device/$PLATFORM/asic.conf ] && . /usr/share/sonic/device/$PLATFORM/asic.conf
 NUM_ASIC=${NUM_ASIC:-1}
+# List of ASICs that perform the reboot
 ASIC_LIST=($(seq 0 $(( NUM_ASIC - 1))))
 
 function error()
@@ -129,7 +130,8 @@ function execute_in_namespaces()
             # If the command failed, remove the ASIC from the list
             if [[ $rc -ne 0 ]]; then
                 error "Command $cmd failed for $dev returned $rc"
-                unset "ASIC_LIST[$dev]"
+                # Remove failed ASIC from the list
+                ASIC_LIST=(${ASIC_LIST[@]/$dev})
             fi
             # All ASICs failed, exit with an error
             if [ ${#ASIC_LIST[@]} -eq 0 ]; then
