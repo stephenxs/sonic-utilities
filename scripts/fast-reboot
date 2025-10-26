@@ -739,6 +739,7 @@ function reboot_pre_check()
     fi
     rm ${filename}
 
+    # TODO(stepanb): Add namespace option to sonic-db-dump and check_db_integrity to support multi-namespace.
     if [[ $NUM_ASIC -eq 1 ]]; then
         check_db_integrity
     fi
