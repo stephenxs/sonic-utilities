@@ -987,25 +987,57 @@ else
     debug "Setting up control plane assistant on multi-ASIC devices is not supported"
 fi
 
-# TODO(stepanb): multi-asic
-if [[ $NUM_ASIC -eq 1 ]]; then
-    TEAMD_INCREASE_RETRY_COUNT=0
-    if [[ "${REBOOT_TYPE}" = "warm-reboot" || "${REBOOT_TYPE}" = "fastfast-reboot" || "$REBOOT_TYPE" = "express-reboot" ]]; then
-        TEAMD_RETRY_COUNT_PROBE_RC=0
-        /usr/local/bin/teamd_increase_retry_count.py --probe-only || TEAMD_RETRY_COUNT_PROBE_RC=$?
-        if [[ ${TEAMD_RETRY_COUNT_PROBE_RC} -ne 0 ]]; then
-            if [[ "${REQUIRE_TEAMD_RETRY_COUNT}" = "yes" ]]; then
-                error "Could not confirm that all neighbor devices are running SONiC with the retry count feature"
-                exit "${EXIT_TEAMD_RETRY_COUNT_FAILURE}"
-            else
-                debug "Warning: Retry count feature support unknown for one or more neighbor devices; assuming that it's not available"
+function probe_teamd_retry_count()
+{
+    TEAMD_RETRY_COUNT_PROBE_RC=0
+    command="/usr/local/bin/teamd_increase_retry_count.py --probe-only"
+    if [[ -n "${NETNS}" ]]; then
+        command="sonic-netns-exec ${NETNS} ${command}"
+    fi
+    $command || TEAMD_RETRY_COUNT_PROBE_RC=$?
+    if [[ ${TEAMD_RETRY_COUNT_PROBE_RC} -ne 0 ]]; then
+        debug "Could not confirm that all neighbor devices are running SONiC with the retry count feature"
+        rm -rf /tmp/teamd_retry_count_probe_success$DEV
+    else
+        # Leave a file to indicate that the probe was successful
+        touch /tmp/teamd_retry_count_probe_success$DEV
+    fi
+}
+
+function check_teamd_retry_count_probe_success()
+{
+    if [[ $NUM_ASIC -gt 1 ]]; then
+        for dev in ${ASIC_LIST[@]}; do
+            if [[ ! -f /tmp/teamd_retry_count_probe_success$dev ]]; then
+                return "${EXIT_TEAMD_RETRY_COUNT_FAILURE}"
             fi
-        else
-            TEAMD_INCREASE_RETRY_COUNT=1
+        done
+    else
+        if [[ ! -f /tmp/teamd_retry_count_probe_success ]]; then
+            return "${EXIT_TEAMD_RETRY_COUNT_FAILURE}"
         fi
     fi
-else
-    debug "Increasing teamd retry count on multi-ASIC devices is not yet implemented"
+}
+
+function increase_teamd_retry_count()
+{
+    command="/usr/local/bin/teamd_increase_retry_count.py"
+    if [[ -n "${NETNS}" ]]; then
+        command="sonic-netns-exec ${NETNS} ${command}"
+    fi
+    if [[ -f /tmp/teamd_retry_count_probe_success$DEV ]]; then
+        $command
+    fi
+}
+
+if [[ "${REBOOT_TYPE}" = "warm-reboot" || "${REBOOT_TYPE}" = "fastfast-reboot" || "$REBOOT_TYPE" = "express-reboot" ]]; then
+    execute_in_namespaces asic probe_teamd_retry_count
+
+    # Check if all ASICs passed retry count probe if required
+    if [[ "${REQUIRE_TEAMD_RETRY_COUNT}" = "yes" ]]; then
+        check_teamd_retry_count_probe_success || error "Could not confirm that all neighbor devices are running SONiC with the retry count feature"
+        exit "${EXIT_TEAMD_RETRY_COUNT_FAILURE}"
+    fi
 fi
 
 function pause_orchagent()
@@ -1032,13 +1064,8 @@ if [[ "$REBOOT_TYPE" = "warm-reboot" || "$REBOOT_TYPE" = "fastfast-reboot" || "$
     execute_in_namespaces asic pause_orchagent
 fi
 
-# TODO(stepanb): multi-asic
-if [[ $NUM_ASIC -eq 1 ]]; then
-    if [[ ( "${REBOOT_TYPE}" = "warm-reboot" || "${REBOOT_TYPE}" = "fastfast-reboot" || "${REBOOT_TYPE}" = "express-reboot" ) && "${TEAMD_INCREASE_RETRY_COUNT}" -eq 1 ]]; then
-        /usr/local/bin/teamd_increase_retry_count.py
-    fi
-else
-    debug "Increasing teamd retry count on multi-ASIC devices is not supported"
+if [[ "${REBOOT_TYPE}" = "warm-reboot" || "${REBOOT_TYPE}" = "fastfast-reboot" || "${REBOOT_TYPE}" = "express-reboot" ]]; then
+    execute_in_namespaces asic increase_teamd_retry_count
 fi
 
 
