@@ -81,7 +81,7 @@ function debug()
     logger "$message"
 }
 
-# Executes a given command within the network namespaces of multiple ASICs, or globally depending on scope.
+# Executes a given command in parallel for multiple ASICs, or globally depending on scope.
 # Exports the NETNS and DEV environment variables to the command.
 # 
 # Arguments:
