@@ -674,12 +674,27 @@ function check_docker_exec()
 {
     containers="radv bgp lldp swss database teamd syncd"
     for container in $containers; do
-        STATE=$(timeout 1s docker exec $container echo "success"; if [[ $? == 124 ]]; then echo "timed out"; fi)
-        if [[ x"${STATE}" == x"timed out" ]]; then
-            error "Docker exec on $container timedout"
-            exit "${EXIT_FAILURE}"
+        local is_global_service=$(is_global_service $container)
+        local is_asic_service=$(is_asic_service $container)
+
+        if (( $is_global_service && $is_asic_service )); then
+            execute_in_namespaces all check_docker_container_exec $container
+        elif (( $is_asic_service )); then
+            execute_in_namespaces asic check_docker_container_exec $container
+        elif (( $is_global_service )); then
+            check_docker_container_exec $container
         fi
     done
+}
+
+function check_docker_container_exec()
+{
+    local -r container=$1
+    STATE=$(timeout 1s docker exec ${container}$DEV echo "success"; if [[ $? == 124 ]]; then echo "timed out"; fi)
+    if [[ x"${STATE}" == x"timed out" ]]; then
+        error "Docker exec on ${container}$DEV timedout"
+        exit "${EXIT_FAILURE}"
+    fi
 }
 
 function check_pfc_storm_active()
@@ -713,7 +728,9 @@ function check_db_integrity()
 
 function reboot_pre_check()
 {
-    check_pfc_storm_active
+    if [[ $NUM_ASIC -eq 1 ]]; then
+        check_pfc_storm_active
+    fi
     check_docker_exec
     # Make sure that the file system is normal: read-write able
     filename="/host/test-$(date +%Y%m%d-%H%M%S)"
@@ -722,7 +739,9 @@ function reboot_pre_check()
     fi
     rm ${filename}
 
-    check_db_integrity
+    if [[ $NUM_ASIC -eq 1 ]]; then
+        check_db_integrity
+    fi
 
     # Make sure /host has enough space for warm reboot temp files
     avail=$(df -k /host | tail -1 | awk '{ print $4 }')
@@ -922,12 +941,7 @@ unload_kernel
 
 setup_reboot_variables
 
-# TODO(stepanb): multi-asic
-if [[ $NUM_ASIC -eq 1 ]]; then
-    reboot_pre_check
-else
-    debug "Pre-reboot checks on multi-ASIC devices are not yet implemented"
-fi
+reboot_pre_check
 
 if test -f /usr/local/bin/ctrmgr_tools.py
 then
