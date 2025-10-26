@@ -700,8 +700,11 @@ function check_docker_container_exec()
 function check_pfc_storm_active()
 {
     debug "Checking for active PFC storms..."
+    if [[ -n $NETNS ]]; then
+        options+="-n $NETNS"
+    fi
     
-    if pfcwd show stats --check-storm >/dev/null 2>&1; then
+    if pfcwd show stats $options --check-storm >/dev/null 2>&1; then
         debug "No active PFC storms detected. Safe to proceed with warm-reboot..."
     else
         error "PFC storm detected. Aborting warm-reboot to prevent failure in recovery path..."
@@ -728,9 +731,7 @@ function check_db_integrity()
 
 function reboot_pre_check()
 {
-    if [[ $NUM_ASIC -eq 1 ]]; then
-        check_pfc_storm_active
-    fi
+    execute_in_namespaces asic check_pfc_storm_active
     check_docker_exec
     # Make sure that the file system is normal: read-write able
     filename="/host/test-$(date +%Y%m%d-%H%M%S)"
