@@ -201,12 +201,12 @@ function stop_service()
     local -r is_asic_service=$(is_asic_service $service)
     local -r is_global_service=$(is_global_service $service)
 
-    if (( $is_global_service )); then
-        stop_systemd_service $service
-    fi
-
-    if (( $is_asic_service )); then
+    if (( $is_asic_service && $is_global_service )); then
+        execute_in_namespaces all stop_systemd_service $service
+    elif (( $is_asic_service )); then
         execute_in_namespaces asic stop_systemd_service $service
+    elif (( $is_global_service )); then
+        stop_systemd_service $service
     fi
 }
 
