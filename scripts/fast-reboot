@@ -415,13 +415,6 @@ function wait_for_pre_shutdown_complete_or_fail()
     fi
 }
 
-function do_syncd_pre_shutdown()
-{
-    initialize_pre_shutdown
-    request_pre_shutdown
-    wait_for_pre_shutdown_complete_or_fail
-}
-
 function backup_database()
 {
     debug "Backing up database ..."
@@ -1098,7 +1091,9 @@ for service in ${SERVICES_TO_STOP}; do
     if [[ "${service}" = "swss" ]]; then
         if [[ "$REBOOT_TYPE" = "warm-reboot" || "$REBOOT_TYPE" = "fastfast-reboot" || "$REBOOT_TYPE" = "express-reboot" ]]; then
             # Pre-shutdown syncd
-            execute_in_namespaces asic do_syncd_pre_shutdown
+            execute_in_namespaces asic initialize_pre_shutdown
+            execute_in_namespaces asic request_pre_shutdown
+            execute_in_namespaces asic wait_for_pre_shutdown_complete_or_fail
         fi
     fi
 done
