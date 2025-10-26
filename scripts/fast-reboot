@@ -141,7 +141,7 @@ function execute_in_namespaces()
             fi
         done
     else
-        $cmd
+        ( $cmd )
     fi
 }
 
