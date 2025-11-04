@@ -19,12 +19,9 @@ import argparse
 import signal
 
 from sonic_py_common import logger
-from swsscommon.swsscommon import DBConnector, Table, SonicDBConfig, SonicDBKey
+from swsscommon.swsscommon import DBConnector, Table
 
-NETNS = os.environ.get("NETNS", "")
-LOG_IDENTIFIER = f"teamd_increase_retry_count{NETNS}"
-
-log = logger.Logger(log_identifier=LOG_IDENTIFIER)
+log = logger.Logger()
 revertTeamdRetryCountChanges = False
 DEFAULT_RETRY_COUNT = 3
 EXTENDED_RETRY_COUNT = 5
@@ -92,11 +89,8 @@ class LacpPacketListenThread(Thread):
                 store=0, timeout=30, started_callback=self.sendReadyEvent.set)
 
 def getPortChannels():
-    key = SonicDBKey()
-    key.netns = NETNS
-    is_tcp_conn = False
-    applDb = DBConnector("APPL_DB", 0, is_tcp_conn, key)
-    configDb = DBConnector("CONFIG_DB", 0, is_tcp_conn, key)
+    applDb = DBConnector("APPL_DB", 0)
+    configDb = DBConnector("CONFIG_DB", 0)
     portChannelTable = Table(applDb, "LAG_TABLE")
     portChannels = portChannelTable.getKeys()
     activePortChannels = []
@@ -225,7 +219,6 @@ def main(probeOnly=False):
     if os.geteuid() != 0:
         log.log_error("Root privileges required for this operation", also_print_to_console=True)
         sys.exit(1)
-    SonicDBConfig.initializeGlobalConfig()
     portChannels = getPortChannels()
     if not portChannels:
         log.log_info("No port channels retrieved; exiting")
