@@ -218,12 +218,7 @@ function start_lag_keepalive()
     # start sending LACPDUs to keep the LAGs refreshed
     # the process will die in 30s
     debug "Starting lag_keepalive to send LACPDUs ..."
-    command="python3 ${LAG_KEEPALIVE_SCRIPT} --fork-into-background"
-    # If NETNS is set, run the command in the network namespace
-    if [[ -n $NETNS ]]; then
-        command="sonic-netns-exec $NETNS ${command}"
-    fi
-
+    command="python3 ${LAG_KEEPALIVE_SCRIPT} --fork-into-background --namespace '$NETNS'"
     timeout --foreground 30 ${command}
 
     # give the lag_keepalive script a chance to send some LACPDUs
@@ -463,7 +458,7 @@ function backup_database()
         end
     " 0 > /dev/null
 
-    target_db_inst=`centralize_database APPL_DB`
+    target_db_inst=`centralize_database APPL_DB --namespace "$NETNS"`
 
     # Dump redis content to a file 'dump.rdb' in warmboot directory
     docker cp database$DEV:/var/lib/$target_db_inst/$REDIS_FILE $warm_dir
@@ -742,10 +737,7 @@ function reboot_pre_check()
     fi
     rm ${filename}
 
-    # TODO(stepanb): Add namespace option to sonic-db-dump and check_db_integrity to support multi-namespace.
-    if [[ $NUM_ASIC -eq 1 ]]; then
-        check_db_integrity
-    fi
+    execute_in_namespaces asic check_db_integrity
 
     # Make sure /host has enough space for warm reboot temp files
     avail=$(df -k /host | tail -1 | awk '{ print $4 }')
@@ -1008,11 +1000,7 @@ fi
 function probe_teamd_retry_count()
 {
     TEAMD_RETRY_COUNT_PROBE_RC=0
-    command="/usr/local/bin/teamd_increase_retry_count.py --probe-only"
-    if [[ -n "${NETNS}" ]]; then
-        command="sonic-netns-exec ${NETNS} ${command}"
-    fi
-    $command || TEAMD_RETRY_COUNT_PROBE_RC=$?
+    /usr/local/bin/teamd_increase_retry_count.py --probe-only --namespace "$NETNS" || TEAMD_RETRY_COUNT_PROBE_RC=$?
     if [[ ${TEAMD_RETRY_COUNT_PROBE_RC} -ne 0 ]]; then
         debug "Could not confirm that all neighbor devices are running SONiC with the retry count feature"
         rm -rf /tmp/teamd_retry_count_probe_success$DEV
@@ -1039,12 +1027,8 @@ function check_teamd_retry_count_probe_success()
 
 function increase_teamd_retry_count()
 {
-    command="/usr/local/bin/teamd_increase_retry_count.py"
-    if [[ -n "${NETNS}" ]]; then
-        command="sonic-netns-exec ${NETNS} ${command}"
-    fi
     if [[ -f /tmp/teamd_retry_count_probe_success$DEV ]]; then
-        $command
+        /usr/local/bin/teamd_increase_retry_count.py --namespace "$NETNS"
     fi
 }
 
