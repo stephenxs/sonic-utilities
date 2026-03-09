@@ -189,7 +189,7 @@ def test_mirror_session_erspan_add_invalid_yang_validation():
 
 
 @patch("config.main.ConfigDBConnector", spec=True, connect=mock.Mock())
-@patch("config.main.multi_asic.get_all_namespaces", mock.Mock(return_value={'front_ns': 'sample_ns'}))
+@patch("config.main.multi_asic.get_all_namespaces", mock.Mock(return_value={'front_ns': ['sample_ns']}))
 @patch("validated_config_db_connector.device_info.is_yang_config_validation_enabled", mock.Mock(return_value=True))
 @patch("config.validated_config_db_connector.ValidatedConfigDBConnector.validated_set_entry", mock.Mock(side_effect=ValueError))
 def test_mirror_session_erspan_add_multi_asic_invalid_yang_validation(mock_db_connector):
@@ -306,7 +306,8 @@ def test_mirror_session_span_add():
 
 
 @patch("config.main.ConfigDBConnector", spec=True, connect=mock.Mock())
-@patch("config.main.multi_asic.get_all_namespaces", mock.Mock(return_value={'front_ns': 'sample_ns'}))
+@patch("config.main.multi_asic.get_all_namespaces", mock.Mock(return_value={'front_ns': ['sample_ns']}))
+@patch("config.main.get_port_namespace", mock.Mock(return_value='sample_ns'))
 @patch("validated_config_db_connector.device_info.is_yang_config_validation_enabled", mock.Mock(return_value=True))
 @patch("config.validated_config_db_connector.ValidatedConfigDBConnector.validated_set_entry", mock.Mock(side_effect=ValueError))
 def test_mirror_session_span_add_multi_asic_invalid_yang_validation(mock_db_connector):
@@ -331,10 +332,11 @@ def test_mirror_session_span_add_invalid_yang_validation():
     assert "Invalid ConfigDB. Error" in result.output
 
 
-@patch("config.main.multi_asic.get_all_namespaces", mock.Mock(return_value={'front_ns': 'sample_ns'}))
+@patch("config.main.multi_asic.get_all_namespaces", mock.Mock(return_value={'front_ns': ['sample_ns']}))
 @patch("validated_config_db_connector.device_info.is_yang_config_validation_enabled", mock.Mock(return_value=True))
 @patch("config.main.ConfigDBConnector", spec=True, connect=mock.Mock())
 @patch("config.validated_config_db_connector.ValidatedConfigDBConnector.validated_set_entry", mock.Mock(side_effect=JsonPatchConflict))
+@patch("config.main.ValidatedConfigDBConnector.get_entry", mock.Mock(return_value={'type': 'SPAN', 'dst_port': 'Ethernet0'}))
 def test_mirror_session_remove_multi_asic_invalid_yang_validation(mock_db_connector):
     config.ADHOC_VALIDATION = False
     runner = CliRunner()
