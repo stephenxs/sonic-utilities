@@ -3416,18 +3416,19 @@ def add_erspan(session_name, src_ip, dst_ip, dscp, ttl, gre_type, queue, policer
             ctx.fail("Invalid ConfigDB. Error: {}".format(e))
 
     else:
-        # For multi-ASIC with src_port, source ports only exist in their
-        # own namespace. Validate and write src_port only in the matching
-        # namespace; other namespaces get the session without src_port
+        # Validate and write src_port only in the matching namespace
         # so ERSPAN is still available for ACL-based mirroring everywhere.
         ns_src_ports = {}
         if src_port:
+            front_ns_set = set(namespaces['front_ns'])
             converted_ports = session_info.get('src_port', src_port).split(",")
             original_ports = src_port.split(",")
             for orig, conv in zip(original_ports, converted_ports):
                 port_ns = get_port_namespace(orig)
                 if port_ns is None:
                     ctx.fail("Error: Source Interface {} is invalid".format(conv))
+                if port_ns not in front_ns_set:
+                    ctx.fail("Error: Source Interface {} is not a front-panel port".format(conv))
                 ns_src_ports.setdefault(port_ns, []).append(conv)
 
         base_session_info = {k: v for k, v in session_info.items()
@@ -3492,9 +3493,7 @@ def add_span(session_name, dst_port, src_port, direction, queue, policer):
     ctx = click.get_current_context()
 
     """
-    For multi-npu platforms we need to program only the namespace
-    where the destination port belongs. Source ports must also be
-    in the same namespace as the destination port.
+    For multi-npu platforms we need to program all front asic namespaces
     """
     namespaces = multi_asic.get_all_namespaces()
     if not namespaces['front_ns']:
@@ -3509,16 +3508,13 @@ def add_span(session_name, dst_port, src_port, direction, queue, policer):
             ctx.fail("Invalid ConfigDB. Error: {}".format(e))
     else:
         # Auto-detect namespace from destination port
-        # Use original port name (before alias conversion) since
-        # get_port_namespace handles alias mode internally
         dst_port_namespace = get_port_namespace(original_dst_port)
         if dst_port_namespace is None:
             ctx.fail("Error: Destination Interface {} is invalid".format(dst_port))
+        if dst_port_namespace not in namespaces['front_ns']:
+            ctx.fail("Error: Destination Interface {} is not a front-panel port".format(dst_port))
 
         # Verify all source ports are in the same namespace as destination port.
-        # This check is intentionally done before validate_mirror_session_config
-        # to provide a clearer error message ("not in the same namespace") rather
-        # than the generic "is invalid" from interface_name_is_valid.
         if src_port:
             for port in src_port.split(","):
                 port_ns = get_port_namespace(port)
