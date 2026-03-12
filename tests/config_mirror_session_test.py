@@ -1,4 +1,5 @@
 import pytest
+import click
 import config.main as config
 import jsonpatch
 from unittest import mock
@@ -357,6 +358,149 @@ def test_mirror_session_remove_invalid_yang_validation():
             ["mrr_sample"])
     print(result.output)
     assert "Invalid ConfigDB. Error" in result.output
+
+
+def test_interface_has_mirror_config_matches_exact_port_tokens():
+    ctx = mock.Mock()
+    mirror_table = {
+        "test_session": {
+            "src_port": "Ethernet40,Ethernet48",
+            "direction": "RX"
+        }
+    }
+
+    assert config.interface_has_mirror_config(ctx, mirror_table, None, "Ethernet4", "rx") is False
+    ctx.fail.assert_not_called()
+
+
+def test_add_span_validates_before_src_port_alias_conversion():
+    config.ADHOC_VALIDATION = True
+    db = mock.MagicMock()
+
+    with click.Context(click.Command("test")):
+        with mock.patch("config.main.multi_asic.get_all_namespaces", return_value={"front_ns": []}), \
+             mock.patch("config.main.ConfigDBConnector", return_value=mock.Mock()), \
+             mock.patch("config.main.ValidatedConfigDBConnector", return_value=db), \
+             mock.patch("config.main.validate_mirror_session_config", return_value=True) as mock_validate, \
+             mock.patch("config.main.clicommon.get_interface_naming_mode", return_value="alias"), \
+             mock.patch("config.main.interface_alias_to_name", side_effect=lambda _db, name: {"Eth0": "Ethernet0", "Eth4": "Ethernet4"}.get(name, name)):
+            config.add_span("test_session", "Eth0", "Eth4", "rx", 0, None)
+
+    assert mock_validate.call_args[0][3] == "Eth4"
+    assert db.set_entry.call_args[0][2]["src_port"] == "Ethernet4"
+
+
+def test_add_erspan_validates_before_src_port_alias_conversion():
+    config.ADHOC_VALIDATION = True
+    db = mock.MagicMock()
+
+    with click.Context(click.Command("test")):
+        with mock.patch("config.main.multi_asic.get_all_namespaces", return_value={"front_ns": []}), \
+             mock.patch("config.main.ConfigDBConnector", return_value=mock.Mock()), \
+             mock.patch("config.main.ValidatedConfigDBConnector", return_value=db), \
+             mock.patch("config.main.validate_mirror_session_config", return_value=True) as mock_validate, \
+             mock.patch("config.main.clicommon.get_interface_naming_mode", return_value="alias"), \
+             mock.patch("config.main.interface_alias_to_name", side_effect=lambda _db, name: {"Eth4": "Ethernet4"}.get(name, name)):
+            config.add_erspan("test_session", "1.1.1.1", "2.2.2.2", 8, 63, 10, 0, None, "Eth4", "rx")
+
+    assert mock_validate.call_args[0][3] == "Eth4"
+    assert db.set_entry.call_args[0][2]["src_port"] == "Ethernet4"
+
+
+def test_mirror_session_span_add_multi_asic_writes_only_destination_namespace():
+    config.ADHOC_VALIDATION = True
+    dbs = {"asic0": mock.MagicMock(), "asic1": mock.MagicMock()}
+
+    with click.Context(click.Command("test")):
+        with mock.patch('config.main.multi_asic.get_all_namespaces', return_value={'front_ns': ['asic0', 'asic1']}), \
+             mock.patch('config.main.get_port_namespace', side_effect=lambda port: {'Ethernet0': 'asic1', 'Ethernet4': 'asic1'}[port]), \
+             mock.patch('config.main.ConfigDBConnector', side_effect=lambda **kwargs: mock.MagicMock(namespace=kwargs.get('namespace'))), \
+             mock.patch('config.main.ValidatedConfigDBConnector', side_effect=lambda conn: dbs[conn.namespace]), \
+             mock.patch('config.main.validate_mirror_session_config', return_value=True) as mock_validate:
+            config.add_span("test_session", "Ethernet0", "Ethernet4", "rx", 0, None)
+
+    # asic0 should not have any writes
+    dbs["asic0"].set_entry.assert_not_called()
+    # asic1 should have exactly one write
+    dbs["asic1"].set_entry.assert_called_once()
+    _, _, value = dbs["asic1"].set_entry.call_args[0]
+    assert value["dst_port"] == "Ethernet0"
+    assert value["src_port"] == "Ethernet4"
+    assert value["direction"] == "RX"
+    assert value["queue"] == 0
+    # Validation targeted the destination port's namespace
+    assert mock_validate.call_args[0][5] == "asic1"
+
+
+def test_mirror_session_span_add_multi_asic_rejects_cross_asic_source_port():
+    config.ADHOC_VALIDATION = True
+    dbs = {"asic0": mock.MagicMock(), "asic1": mock.MagicMock()}
+
+    with click.Context(click.Command("test")):
+        with mock.patch('config.main.multi_asic.get_all_namespaces', return_value={'front_ns': ['asic0', 'asic1']}), \
+             mock.patch('config.main.get_port_namespace', side_effect=lambda port: {'Ethernet0': 'asic0', 'Ethernet64': 'asic1'}[port]), \
+             mock.patch('config.main.ConfigDBConnector', side_effect=lambda **kwargs: mock.MagicMock(namespace=kwargs.get('namespace'))), \
+             mock.patch('config.main.ValidatedConfigDBConnector', side_effect=lambda conn: dbs[conn.namespace]):
+            with pytest.raises(SystemExit):
+                config.add_span("test_session", "Ethernet0", "Ethernet64", "rx", 0, None)
+
+    # No writes to any namespace
+    dbs["asic0"].set_entry.assert_not_called()
+    dbs["asic1"].set_entry.assert_not_called()
+
+
+def test_mirror_session_erspan_add_multi_asic_splits_source_ports_by_namespace():
+    config.ADHOC_VALIDATION = True
+    dbs = {"asic0": mock.MagicMock(), "asic1": mock.MagicMock(), "asic2": mock.MagicMock()}
+
+    with click.Context(click.Command("test")):
+        with mock.patch('config.main.multi_asic.get_all_namespaces', return_value={'front_ns': ['asic0', 'asic1', 'asic2']}), \
+             mock.patch('config.main.get_port_namespace', side_effect=lambda port: {'Ethernet0': 'asic0', 'Ethernet8': 'asic1'}[port]), \
+             mock.patch('config.main.ConfigDBConnector', side_effect=lambda **kwargs: mock.MagicMock(namespace=kwargs.get('namespace'))), \
+             mock.patch('config.main.ValidatedConfigDBConnector', side_effect=lambda conn: dbs[conn.namespace]), \
+             mock.patch('config.main.validate_mirror_session_config', return_value=True):
+            config.add_erspan(
+                "test_session", "1.1.1.1", "2.2.2.2", 8, 63, 10, 0, None,
+                "Ethernet0,Ethernet8", "rx"
+            )
+
+    # Each namespace should get exactly one write
+    for ns in ["asic0", "asic1", "asic2"]:
+        dbs[ns].set_entry.assert_called_once()
+
+    asic0_value = dbs["asic0"].set_entry.call_args[0][2]
+    asic1_value = dbs["asic1"].set_entry.call_args[0][2]
+    asic2_value = dbs["asic2"].set_entry.call_args[0][2]
+
+    # asic0 gets Ethernet0's src_port
+    assert asic0_value["src_port"] == "Ethernet0"
+    assert asic0_value["direction"] == "RX"
+    # asic1 gets Ethernet8's src_port
+    assert asic1_value["src_port"] == "Ethernet8"
+    assert asic1_value["direction"] == "RX"
+    # asic2 gets the base ERSPAN session without src_port
+    assert "src_port" not in asic2_value
+    assert "direction" not in asic2_value
+
+
+def test_mirror_session_remove_multi_asic_skips_missing_sessions():
+    config.ADHOC_VALIDATION = False
+    asic0_db = mock.MagicMock()
+    asic0_db.get_entry.return_value = {"type": "SPAN", "dst_port": "Ethernet0"}
+    asic1_db = mock.MagicMock()
+    asic1_db.get_entry.return_value = {}
+    dbs = {"asic0": asic0_db, "asic1": asic1_db}
+
+    with click.Context(click.Command("test")):
+        with mock.patch('config.main.multi_asic.get_all_namespaces', return_value={'front_ns': ['asic0', 'asic1']}), \
+             mock.patch('config.main.ConfigDBConnector', side_effect=lambda **kwargs: mock.MagicMock(namespace=kwargs.get('namespace'))), \
+             mock.patch('config.main.ValidatedConfigDBConnector', side_effect=lambda conn: dbs[conn.namespace]):
+            config.remove.invoke(click.Context(config.remove), session_name="sess1")
+
+    # asic0 has the session, so it should be deleted
+    dbs["asic0"].set_entry.assert_called_once_with("MIRROR_SESSION", "sess1", None)
+    # asic1 does not have the session, so set_entry should not be called
+    dbs["asic1"].set_entry.assert_not_called()
 
 
 def test_mirror_session_capability_checking():
