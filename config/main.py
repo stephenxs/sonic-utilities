@@ -544,15 +544,10 @@ def get_port_namespace(port):
     if not multi_asic.is_multi_asic() or port == 'eth0':
         return DEFAULT_NAMESPACE
 
-    # Get the table to check for interface presence.
-    # Physical port aliases do not look like "Ethernet*" so in alias mode we
-    # need to fall back to scanning PORT aliases across namespaces.
+    # Get the table to check for interface presence
     table_name = get_port_table_name(port)
     if table_name == "":
-        if clicommon.get_interface_naming_mode() == "alias":
-            table_name = 'PORT'
-        else:
-            return None
+        return None
 
     ns_list = multi_asic.get_all_namespaces()
     namespaces = ns_list['front_ns'] + ns_list['back_ns']
@@ -3478,16 +3473,13 @@ def add_erspan(session_name, src_ip, dst_ip, dscp, ttl, gre_type, queue, policer
 
         per_npu_configdb = {}
         for front_asic_namespaces in namespaces['front_ns']:
-            per_npu_configdb[front_asic_namespaces] = ValidatedConfigDBConnector(
-                ConfigDBConnector(use_unix_socket_path=True, namespace=front_asic_namespaces)
-            )
+            per_npu_configdb[front_asic_namespaces] = ValidatedConfigDBConnector(ConfigDBConnector(use_unix_socket_path=True, namespace=front_asic_namespaces))
             per_npu_configdb[front_asic_namespaces].connect()
 
-        ns_session_infos = {}
-        for front_asic_namespaces in namespaces['front_ns']:
             ns_ports = ns_src_ports.get(front_asic_namespaces)
             if ns_ports:
                 ns_src_port = ",".join(ns_ports)
+                ns_session_info = dict(base_session_info)
                 if ADHOC_VALIDATION:
                     if validate_mirror_session_config(
                         per_npu_configdb[front_asic_namespaces],
@@ -3499,35 +3491,27 @@ def add_erspan(session_name, src_ip, dst_ip, dscp, ttl, gre_type, queue, policer
                         front_asic_configdbs=per_npu_configdb
                     ) is False:
                         return
-                ns_session_info = dict(base_session_info)
                 ns_session_info['src_port'] = normalize_mirror_src_port(
                     per_npu_configdb[front_asic_namespaces], ns_src_port
                 )
                 ns_session_info['direction'] = session_info.get('direction', 'BOTH')
             else:
                 ns_src_port = None
-                if ADHOC_VALIDATION:
-                    if validate_mirror_session_config(
-                        per_npu_configdb[front_asic_namespaces],
-                        session_name,
-                        None,
-                        ns_src_port,
-                        direction,
-                        front_asic_namespaces,
-                        front_asic_configdbs=per_npu_configdb
-                    ) is False:
-                        return
-                ns_session_info = dict(base_session_info)
+                ns_session_info = base_session_info
 
-            ns_session_infos[front_asic_namespaces] = ns_session_info
-
-        for front_asic_namespaces in namespaces['front_ns']:
-            try:
-                per_npu_configdb[front_asic_namespaces].set_entry(
-                    "MIRROR_SESSION",
+            if ADHOC_VALIDATION and not ns_ports:
+                if validate_mirror_session_config(
+                    per_npu_configdb[front_asic_namespaces],
                     session_name,
-                    ns_session_infos[front_asic_namespaces]
-                )
+                    None,
+                    ns_src_port,
+                    direction,
+                    front_asic_namespaces,
+                    front_asic_configdbs=per_npu_configdb
+                ) is False:
+                    return
+            try:
+                per_npu_configdb[front_asic_namespaces].set_entry("MIRROR_SESSION", session_name, ns_session_info)
             except ValueError as e:
                 ctx.fail("Invalid ConfigDB. Error: {}".format(e))
 
