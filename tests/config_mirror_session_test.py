@@ -336,7 +336,7 @@ def test_mirror_session_span_add_invalid_yang_validation():
 @patch("validated_config_db_connector.device_info.is_yang_config_validation_enabled", mock.Mock(return_value=True))
 @patch("config.main.ConfigDBConnector", spec=True, connect=mock.Mock())
 @patch("config.validated_config_db_connector.ValidatedConfigDBConnector.validated_set_entry", mock.Mock(side_effect=JsonPatchConflict))
-@patch("config.main.ValidatedConfigDBConnector.get_entry", mock.Mock(return_value={'type': 'SPAN', 'dst_port': 'Ethernet0'}), create=True)
+@patch("config.main.ValidatedConfigDBConnector.get_entry", mock.Mock(return_value={'type': 'SPAN', 'dst_port': 'Ethernet0'}))
 def test_mirror_session_remove_multi_asic_invalid_yang_validation(mock_db_connector):
     config.ADHOC_VALIDATION = False
     runner = CliRunner()
