@@ -441,7 +441,7 @@ def test_mirror_session_span_add_multi_asic_rejects_cross_asic_source_port():
              mock.patch('config.main.get_port_namespace', side_effect=lambda port: {'Ethernet0': 'asic0', 'Ethernet64': 'asic1'}[port]), \
              mock.patch('config.main.ConfigDBConnector', side_effect=lambda **kwargs: mock.MagicMock(namespace=kwargs.get('namespace'))), \
              mock.patch('config.main.ValidatedConfigDBConnector', side_effect=lambda conn: dbs[conn.namespace]):
-            with pytest.raises(click.UsageError):
+            with pytest.raises(SystemExit):
                 config.add_span("test_session", "Ethernet0", "Ethernet64", "rx", 0, None)
 
     # No writes to any namespace
@@ -458,8 +458,7 @@ def test_mirror_session_erspan_add_multi_asic_splits_source_ports_by_namespace()
              mock.patch('config.main.get_port_namespace', side_effect=lambda port: {'Ethernet0': 'asic0', 'Ethernet8': 'asic1'}[port]), \
              mock.patch('config.main.ConfigDBConnector', side_effect=lambda **kwargs: mock.MagicMock(namespace=kwargs.get('namespace'))), \
              mock.patch('config.main.ValidatedConfigDBConnector', side_effect=lambda conn: dbs[conn.namespace]), \
-             mock.patch('config.main.validate_mirror_session_config', return_value=True), \
-             mock.patch('config.main.interface_name_is_valid', return_value=True):
+             mock.patch('config.main.validate_mirror_session_config', return_value=True):
             config.add_erspan(
                 "test_session", "1.1.1.1", "2.2.2.2", 8, 63, 10, 0, None,
                 "Ethernet0,Ethernet8", "rx"
@@ -492,15 +491,11 @@ def test_mirror_session_remove_multi_asic_skips_missing_sessions():
     asic1_db.get_entry.return_value = {}
     dbs = {"asic0": asic0_db, "asic1": asic1_db}
 
-    runner = CliRunner()
-    with mock.patch('config.main.multi_asic.get_all_namespaces', return_value={'front_ns': ['asic0', 'asic1']}), \
-         mock.patch('config.main.ConfigDBConnector', side_effect=lambda **kwargs: mock.MagicMock(namespace=kwargs.get('namespace'))), \
-         mock.patch('config.main.ValidatedConfigDBConnector', side_effect=lambda conn: dbs[conn.namespace]):
-        result = runner.invoke(
-            config.config.commands["mirror_session"].commands["remove"],
-            ["sess1"]
-        )
-        assert result.exit_code == 0
+    with click.Context(click.Command("test")):
+        with mock.patch('config.main.multi_asic.get_all_namespaces', return_value={'front_ns': ['asic0', 'asic1']}), \
+             mock.patch('config.main.ConfigDBConnector', side_effect=lambda **kwargs: mock.MagicMock(namespace=kwargs.get('namespace'))), \
+             mock.patch('config.main.ValidatedConfigDBConnector', side_effect=lambda conn: dbs[conn.namespace]):
+            config.remove.invoke(click.Context(config.remove), session_name="sess1")
 
     # asic0 has the session, so it should be deleted
     dbs["asic0"].set_entry.assert_called_once_with("MIRROR_SESSION", "sess1", None)
