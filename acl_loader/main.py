@@ -274,8 +274,11 @@ class AclLoader(object):
         :return:
         """
 
-        # For multi-npu platforms, merge sessions from all front asic
-        # namespace config dbs and track per-session namespaces so that
+        # For multi-npu platforms we read from all front asic namespace
+        # config dbs and merge. ERSPAN sessions exist in all namespaces
+        # (duplicates are naturally de-duped by key), while SPAN sessions
+        # only exist in the namespace of their destination port.
+        # We track which namespaces each session belongs to so that
         # state_db queries only target relevant namespaces.
         if self.per_npu_configdb:
             self.sessions_db_info = {}
